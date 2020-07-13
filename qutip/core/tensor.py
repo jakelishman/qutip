@@ -47,7 +47,7 @@ from .dimensions import (
     flatten, enumerate_flat, unflatten, deep_remove,
     dims_to_tensor_shape, dims_idxs_to_tensor_idxs
 )
-from .cy.spmath import zcsr_kron
+from . import data as _data
 
 import qutip.settings
 import qutip.core.superop_reps  # Avoid circular dependency here.
@@ -77,53 +77,36 @@ shape = [4, 4], type = oper, isHerm = True
      [ 0.+0.j  1.+0.j  0.+0.j  0.+0.j]
      [ 1.+0.j  0.+0.j  0.+0.j  0.+0.j]]
     """
-
     if not args:
         raise TypeError("Requires at least one input argument")
-
-    if len(args) == 1 and isinstance(args[0], (list, np.ndarray)):
-        # this is the case when tensor is called on the form:
-        # tensor([q1, q2, q3, ...])
-        qlist = args[0]
-
-    elif len(args) == 1 and isinstance(args[0], Qobj):
-        # tensor is called with a single Qobj as an argument, do nothing
-        return args[0]
-
-    else:
-        # this is the case when tensor is called on the form:
-        # tensor(q1, q2, q3, ...)
-        qlist = args
-
-    if not all([isinstance(q, Qobj) for q in qlist]):
-        # raise error if one of the inputs is not a quantum object
-        raise TypeError("One of inputs is not a quantum object")
-
-    out = Qobj()
-
-    if qlist[0].issuper:
-        out.superrep = qlist[0].superrep
-        if not all([q.superrep == out.superrep for q in qlist]):
-            raise TypeError("In tensor products of superroperators, all must" +
-                            "have the same representation")
-
-    out.isherm = True
-    for n, q in enumerate(qlist):
-        if n == 0:
-            out.data = q.data
-            out.dims = q.dims
-        else:
-            out.data  = zcsr_kron(out.data, q.data)
-            
-            out.dims = [out.dims[0] + q.dims[0], out.dims[1] + q.dims[1]]
-
-        out.isherm = out.isherm and q.isherm
-
-    if not out.isherm:
-        out._isherm = None
-
-    return out.tidyup() if qutip.settings.auto_tidyup else out
-
+    if len(args) == 1 and isinstance(args[0], Qobj):
+        return args[0].copy()
+    if len(args) == 1:
+        try:
+            args = tuple(args[0])
+        except TypeError:
+            raise TypeError("requires Qobj operands") from None
+    if not all(isinstance(q, Qobj) for q in args):
+        raise TypeError("requires Qobj operands")
+    if not all(q.superrep == args[0].superrep for q in args[1:]):
+        raise TypeError("".join([
+            "In tensor products of superroperators,",
+            " all must have the same representation"
+        ]))
+    isherm = args[0]._isherm
+    isunitary = args[0]._isunitary
+    out_data = args[0].data
+    dims_l = [d for arg in args for d in arg.dims[0]]
+    dims_r = [d for arg in args for d in arg.dims[1]]
+    for arg in args[1:]:
+        out_data = _data.kron_csr(out_data, arg.data)
+        isherm = isherm and arg._isherm
+        isunitary = isunitary and arg._isunitary
+    return Qobj(out_data,
+                dims=[dims_l, dims_r],
+                isherm=isherm,
+                isunitary=isunitary,
+                copy=False)
 
 def super_tensor(*args):
     """Calculates the tensor product of input superoperators, by tensoring

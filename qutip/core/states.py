@@ -42,13 +42,13 @@ __all__ = ['basis', 'qutrit_basis', 'coherent', 'coherent_dm', 'fock_dm',
 
 import numbers
 import numpy as np
-from numpy import arange, conj, prod
 import scipy.sparse as sp
 
+from . import data as _data
 from .qobj import Qobj
-from .operators import destroy, jmat
+from .operators import jmat, displace
 from .tensor import tensor
-from .fastsparse import fast_csr_matrix
+
 
 def _promote_to_zero_list(arg, length):
     """
@@ -145,11 +145,17 @@ def basis(dimensions, n=None, offset=None):
     for m, dimension in zip(reversed(ns), reversed(dimensions)):
         location += m*size
         size *= dimension
-    data = np.array([1], dtype=complex)
-    ind = np.array([0], dtype=np.int32)
-    ptr = np.array([0]*(location+1) + [1]*(size-location), dtype=np.int32)
-    return Qobj(fast_csr_matrix((data, ind, ptr), shape=(size, 1)),
-                dims=[dimensions, [1]*n_dimensions], isherm=False)
+    data = _data.csr.empty(size, 1, 1)
+    sci = data.as_scipy()
+    sci.data[0] = 1
+    sci.indices[0] = 0
+    sci.indptr[:] = [0]*(location+1) + [1]*(size-location)
+    return Qobj(data,
+                dims=[dimensions, [1]*n_dimensions],
+                type='ket',
+                isherm=False,
+                isunitary=False,
+                copy=False)
 
 
 def qutrit_basis():
@@ -162,6 +168,9 @@ def qutrit_basis():
 
     """
     return np.array([basis(3, 0), basis(3, 1), basis(3, 2)], dtype=object)
+
+
+_COHERENT_METHODS = ('operator', 'analytic')
 
 
 def coherent(N, alpha, offset=0, method='operator'):
@@ -215,14 +224,8 @@ def coherent(N, alpha, offset=0, method='operator'):
 
     """
     if method == "operator" and offset == 0:
-
-        x = basis(N, 0)
-        a = destroy(N)
-        D = (alpha * a.dag() - conj(alpha) * a).expm()
-        return D * x
-
+        return displace(N, alpha) * basis(N, 0)
     elif method == "analytic" or offset > 0:
-
         sqrtn = np.sqrt(np.arange(offset, offset+N, dtype=complex))
         sqrtn[0] = 1 # Get rid of divide by zero warning
         data = alpha/sqrtn
@@ -233,10 +236,11 @@ def coherent(N, alpha, offset=0, method='operator'):
             data[0] = np.exp(-abs(alpha)**2 / 2.0) * alpha**(offset) / s
         np.cumprod(data, out=sqrtn) # Reuse sqrtn array
         return Qobj(sqrtn)
-
     else:
         raise TypeError(
-            "The method option can only take values 'operator' or 'analytic'")
+            "The method option can only take values in "
+            + repr(_COHERENT_METHODS)
+        )
 
 
 def coherent_dm(N, alpha, offset=0, method='operator'):
@@ -288,17 +292,7 @@ shape = [3, 3], type = oper, isHerm = True
     but would in that case give more accurate coefficients.
 
     """
-    if method == "operator":
-        psi = coherent(N, alpha, offset=offset)
-        return psi * psi.dag()
-
-    elif method == "analytic":
-        psi = coherent(N, alpha, offset=offset, method='analytic')
-        return psi * psi.dag()
-
-    else:
-        raise TypeError(
-            "The method option can only take values 'operator' or 'analytic'")
+    return coherent(N, alpha, offset=offset, method=method).proj()
 
 
 def fock_dm(dimensions, n=None, offset=None):
@@ -338,9 +332,7 @@ shape = [3, 3], type = oper, isHerm = True
       [ 0.+0.j  0.+0.j  0.+0.j]]
 
     """
-    psi = basis(dimensions, n, offset=offset)
-
-    return psi * psi.dag()
+    return basis(dimensions, n, offset=offset).proj()
 
 
 def fock(dimensions, n=None, offset=None):
@@ -439,7 +431,7 @@ shape = [5, 5], type = oper, isHerm = True
     if n == 0:
         return fock_dm(N, 0)
     else:
-        i = arange(N)
+        i = np.arange(N)
         if method == 'operator':
             beta = np.log(1.0 / n + 1.0)
             diags = np.exp(-beta * i)
@@ -832,7 +824,7 @@ def state_number_index(dims, state):
 
     """
     return int(
-        sum([state[i] * prod(dims[i + 1:]) for i, d in enumerate(dims)]))
+        sum([state[i] * np.prod(dims[i + 1:]) for i, d in enumerate(dims)]))
 
 
 def state_index_number(dims, index):
