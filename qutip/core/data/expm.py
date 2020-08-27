@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.sparse.linalg
 
+from . import csr
 from .dense import Dense
 from .csr import CSR
 from .properties import isdiag_csr
@@ -13,6 +14,8 @@ __all__ = [
 def expm_csr(matrix: CSR) -> CSR:
     if matrix.shape[0] != matrix.shape[1]:
         raise TypeError("can only exponentiate square matrix")
+    if csr.nnz(matrix) == 0:
+        return csr.identity(matrix.shape[0])
     if isdiag_csr(matrix):
         out = matrix.copy()
         sci = out.as_scipy()
