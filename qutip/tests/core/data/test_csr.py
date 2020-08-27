@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import scipy.sparse
 import pytest
@@ -14,26 +16,6 @@ _dtype_int = ['int32', 'int64']
 _dtype_uint = ['uint32']
 
 
-# Set up some fixtures for automatic parametrisation.
-
-@pytest.fixture(params=[
-    pytest.param((1, 5), id='bra'),
-    pytest.param((5, 1), id='ket'),
-    pytest.param((5, 5), id='square'),
-    pytest.param((2, 4), id='wide'),
-    pytest.param((4, 2), id='tall'),
-])
-def shape(request): return request.param
-
-
-@pytest.fixture(params=[0.001, 1], ids=['sparse', 'dense'])
-def density(request): return request.param
-
-
-@pytest.fixture(params=[True, False], ids=['sorted', 'unsorted'])
-def sorted_(request): return request.param
-
-
 def _valid_scipy():
     """Arbitrary valid scipy CSR"""
     return conftest.random_scipy_csr((10, 10), 0.5, True)
@@ -45,16 +27,6 @@ def _valid_arg():
     """
     sci = _valid_scipy()
     return (sci.data, sci.indices, sci.indptr)
-
-
-@pytest.fixture(scope='function')
-def scipy_csr(shape, density, sorted_):
-    return conftest.random_scipy_csr(shape, density, sorted_)
-
-
-@pytest.fixture(scope='function')
-def data_csr(shape, density, sorted_):
-    return conftest.random_csr(shape, density, sorted_)
 
 
 class TestClassMethods:
@@ -223,11 +195,27 @@ class TestClassMethods:
         # We test on a copy because scipy attempts to cache
         # `has_sorted_indices`, but since it's a view, it has no idea what
         # we've done to the indices behind the scenes and typically would not
-        # notice the change.  The copy will return a difference scipy matrix,
-        # so the cache will not be built.
+        # notice the change.  The copy will return a different scipy matrix, so
+        # the cache will not be built.
         copy = data_csr.copy()
         copy.sort_indices()
         assert copy.as_scipy().has_sorted_indices, message
+
+    def test_is_pickleable(self, data_csr):
+        """
+        Test that it's pickleable, and survives a round trip without sharing data.
+        """
+        round_trip = pickle.loads(pickle.dumps(data_csr))
+        assert round_trip is not data_csr
+        assert round_trip.shape == data_csr.shape
+        round_sci = round_trip.as_scipy()
+        data_sci = data_csr.as_scipy()
+        assert np.all(round_sci.data == data_sci.data)
+        assert np.all(round_sci.indices == data_sci.indices)
+        assert np.all(round_sci.indptr == data_sci.indptr)
+        assert not np.may_share_memory(round_sci.data, data_sci.data)
+        assert not np.may_share_memory(round_sci.indices, data_sci.indices)
+        assert not np.may_share_memory(round_sci.indptr, data_sci.indptr)
 
 
 class TestFactoryMethods:
@@ -241,6 +229,15 @@ class TestFactoryMethods:
         assert sci.data.shape == (nnz,)
         assert sci.indices.shape == (nnz,)
         assert sci.indptr.shape == (shape[0] + 1,)
+
+    def test_empty_like(self, data_csr):
+        empty = csr.empty_like(data_csr)
+        assert empty.shape == data_csr.shape
+        empty_sci = empty.as_scipy()
+        data_sci = data_csr.as_scipy()
+        assert not np.may_share_memory(empty_sci.data, data_sci.data)
+        assert not np.may_share_memory(empty_sci.indices, data_sci.indices)
+        assert not np.may_share_memory(empty_sci.indptr, data_sci.indptr)
 
     def test_zeros(self, shape):
         base = csr.zeros(shape[0], shape[1])
@@ -306,3 +303,19 @@ class TestFactoryMethods:
         assert isinstance(base, data.CSR)
         assert base.shape == shape
         np.testing.assert_allclose(base.to_array(), test, rtol=1e-10)
+
+    def test_copy_structure(self, data_csr):
+        copied = csr.copy_structure(data_csr)
+        assert copied.shape == data_csr.shape
+        copied_sci = copied.as_scipy()
+        data_sci = data_csr.as_scipy()
+        assert np.all(copied_sci.indices == data_sci.indices)
+        assert np.all(copied_sci.indptr == data_sci.indptr)
+        assert not np.may_share_memory(copied_sci.data, data_sci.data)
+        assert not np.may_share_memory(copied_sci.indices, data_sci.indices)
+        assert not np.may_share_memory(copied_sci.indptr, data_sci.indptr)
+
+    def test_from_dense(self, data_dense):
+        compare = csr.from_dense(data_dense)
+        assert compare.shape == data_dense.shape
+        assert np.all(compare.to_array() == data_dense.to_array())

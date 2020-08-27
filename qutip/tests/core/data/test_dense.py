@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import pytest
 
@@ -7,41 +9,16 @@ from qutip.core.data import dense
 from . import conftest
 
 
-# Set up some fixtures for automatic parametrisation.
-
-@pytest.fixture(params=[
-    pytest.param((1, 5), id='ket'),
-    pytest.param((5, 1), id='bra'),
-    pytest.param((5, 5), id='square'),
-    pytest.param((2, 4), id='wide'),
-    pytest.param((4, 2), id='tall'),
-])
-def shape(request): return request.param
-
-
-@pytest.fixture(params=[True, False], ids=['Fortran', 'C'])
-def fortran(request): return request.param
-
-
 def _valid_numpy():
     # Arbitrary valid numpy array.
     return conftest.random_numpy_dense((5, 5), False)
-
-
-@pytest.fixture(scope='function')
-def numpy_dense(shape, fortran):
-    return conftest.random_numpy_dense(shape, fortran)
-
-
-@pytest.fixture(scope='function')
-def data_dense(shape, fortran):
-    return conftest.random_dense(shape, fortran)
 
 
 class TestClassMethods:
     def test_init_from_ndarray(self, numpy_dense):
         test = data.Dense(numpy_dense)
         assert test.shape == numpy_dense.shape
+        assert test.fortran == numpy_dense.flags.f_contiguous
         assert np.all(test.as_ndarray() == numpy_dense)
 
     @pytest.mark.parametrize('dtype', ['complex128',
@@ -182,13 +159,36 @@ class TestClassMethods:
             assert test.flags.c_contiguous
         assert np.all(orig == test)
 
+    def test_is_pickleable(self, data_dense):
+        """
+        Test that it's pickleable, and survives a round trip without sharing data.
+        """
+        round_trip = pickle.loads(pickle.dumps(data_dense))
+        assert round_trip is not data_dense
+        assert round_trip.shape == data_dense.shape
+        assert round_trip.fortran == data_dense.fortran
+        round_np = round_trip.as_ndarray()
+        data_np = data_dense.as_ndarray()
+        assert np.all(data_np == round_np)
+        assert not np.may_share_memory(round_np, data_np)
+
+
 class TestFactoryMethods:
-    def test_empty(self, shape):
-        base = dense.empty(shape[0], shape[1])
+    def test_empty(self, shape, fortran):
+        base = dense.empty(shape[0], shape[1], fortran)
         nd = base.as_ndarray()
         assert isinstance(base, data.Dense)
         assert base.shape == shape
+        assert base.fortran == fortran
         assert nd.shape == shape
+
+    def test_empty_like(self, data_dense):
+        empty = dense.empty_like(data_dense)
+        assert empty.shape == data_dense.shape
+        assert empty.fortran == data_dense.fortran
+        empty_np = empty.as_ndarray()
+        data_np = data_dense.as_ndarray()
+        assert not np.may_share_memory(empty_np, data_np)
 
     def test_zeros(self, shape):
         base = dense.zeros(shape[0], shape[1])
@@ -215,3 +215,9 @@ class TestFactoryMethods:
         assert isinstance(base, data.Dense)
         assert base.shape == (dimension, dimension)
         assert np.count_nonzero(nd - numpy_test) == 0
+
+    def test_from_csr(self, data_csr, fortran):
+        compare = dense.from_csr(data_csr, fortran)
+        assert compare.shape == data_csr.shape
+        assert compare.fortran == fortran
+        assert np.all(compare.to_array() == data_csr.to_array())

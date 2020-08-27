@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse
+import pytest
 
 import qutip
 
@@ -64,3 +65,47 @@ def random_csr(shape, density, sorted_):
 def random_dense(shape, fortran):
     """Generate a random qutip Dense matrix of the given shape."""
     return qutip.core.data.Dense(random_numpy_dense(shape, fortran))
+
+
+# Set up some fixtures for automatic parametrisation.
+
+@pytest.fixture(params=[
+    pytest.param((1, 5), id='ket'),
+    pytest.param((5, 1), id='bra'),
+    pytest.param((5, 5), id='square'),
+    pytest.param((2, 4), id='wide'),
+    pytest.param((4, 2), id='tall'),
+])
+def shape(request): return request.param
+
+
+@pytest.fixture(params=[True, False], ids=['Fortran', 'C'])
+def fortran(request): return request.param
+
+
+@pytest.fixture(params=[0.001, 1], ids=['sparse', 'dense'])
+def density(request): return request.param
+
+
+@pytest.fixture(params=[True, False], ids=['sorted', 'unsorted'])
+def sorted_(request): return request.param
+
+
+@pytest.fixture(scope='function')
+def numpy_dense(shape, fortran):
+    return random_numpy_dense(shape, fortran)
+
+
+@pytest.fixture(scope='function')
+def data_dense(shape, fortran):
+    return random_dense(shape, fortran)
+
+
+@pytest.fixture(scope='function')
+def scipy_csr(shape, density, sorted_):
+    return random_scipy_csr(shape, density, sorted_)
+
+
+@pytest.fixture(scope='function')
+def data_csr(shape, density, sorted_):
+    return random_csr(shape, density, sorted_)
