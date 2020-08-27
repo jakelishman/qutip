@@ -890,6 +890,81 @@ class TestProject(UnaryOpMixin):
     ]
 
 
+class TestPtrace(UnaryOpMixin):
+    def op_numpy(self, matrix, dimensions, selection):
+        selection = sorted(selection)
+        before, after = 1, matrix.shape[0]
+        for i, dim in enumerate(dimensions):
+            after //= dim
+            if i in selection:
+                before = before * dim
+                continue
+            tmp_dims = (before, dim, after) * 2
+            matrix = np.einsum('aibcid->abcd', matrix.reshape(tmp_dims))
+        return matrix.reshape((before*after,)*2)
+
+    cases = [
+        pytest.param([2], [0]),
+        pytest.param([2, 2], [0, 1]),
+        pytest.param([2, 2, 2, 2], [0]),
+        pytest.param([2, 2, 2, 2], [1]),
+        pytest.param([2, 2, 2, 2], [2]),
+        pytest.param([2, 2, 2, 2], [3]),
+        pytest.param([2, 2, 2, 2], [0, 1]),
+        pytest.param([2, 2, 2, 2], [1, 0]),
+        pytest.param([2, 2, 2, 2], [0, 3]),
+        pytest.param([2, 2, 2, 2], [1, 2, 3]),
+        pytest.param([6, 1, 8], [0, 2]),
+        pytest.param([3, 100, 3], [1]),
+    ]
+    specialisations = [
+        pytest.param(data.ptrace_csr, CSR, CSR),
+        pytest.param(data.ptrace_csr_dense, CSR, Dense),
+        pytest.param(data.ptrace_dense, Dense, Dense),
+    ]
+
+    def generate_mathematically_correct(self, metafunc):
+        parameters = (
+            ['op']
+            + [x for x in metafunc.fixturenames
+               if x.startswith("data_")]
+            + ['out_type', 'dimensions', 'selection']
+        )
+        cases = []
+        shapes = []
+        dims_cases = []
+        for dims_case in self.cases:
+            size = np.prod(dims_case.values[0])
+            shapes.append((pytest.param((size, size), id=""),))
+            dims_id = ",".join(repr(x) for x in dims_case.values)
+            dims_cases.append(pytest.param(*dims_case.values, id=dims_id))
+        n_shapes = len(shapes)
+        for p_op in self.specialisations:
+            op, *types, out_type = p_op.values
+            args = (op, types, shapes, out_type)
+            product_cases = cases_type_shape_product(_ALL_CASES, *args)
+            n_matrix_cases = len(product_cases) // n_shapes
+            for i, case in enumerate(product_cases):
+                dims_case = dims_cases[i // n_matrix_cases]
+                cases.append(pytest.param(
+                    *(case.values + dims_case.values),
+                    id=case.id + "," + dims_case.id,
+                ))
+        metafunc.parametrize(parameters, cases)
+
+    def test_mathematically_correct(self, op, data_m, out_type,
+                                    dimensions, selection):
+        matrix = data_m()
+        expected = self.op_numpy(matrix.to_array(), dimensions, selection)
+        test = op(matrix, dimensions, selection)
+        assert isinstance(test, out_type)
+        if issubclass(out_type, Data):
+            assert test.shape == expected.shape
+            np.testing.assert_allclose(test.to_array(), expected, self.tol)
+        else:
+            assert abs(test - expected) < self.tol
+
+
 class TestSub(BinaryOpMixin):
     def op_numpy(self, left, right):
         return left - right
