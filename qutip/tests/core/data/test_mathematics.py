@@ -1,6 +1,7 @@
 import itertools
 import numpy as np
 import pytest
+import scipy.linalg
 
 from qutip.core import data
 from qutip.core.data import Data, Dense, CSR
@@ -14,7 +15,7 @@ _ParameterSet = type(pytest.param())
 # First set up a bunch of allowable shapes, for different types of functions so
 # we don't have to respecify a whole lot of things on repeat.
 
-def shapes_unary(dim=100):
+def shapes_unary_all(dim=100):
     """Base shapes to test for unary functions."""
     # Be sure to test a full spectrum bra-type, ket-type and square and
     # non-square operators.  Keep the dimension sensible, particularly for
@@ -29,12 +30,18 @@ def shapes_unary(dim=100):
     ]
 
 
+def shapes_unary_square(dim=100):
+    return [
+        pytest.param((dim, dim), id="square"),
+    ]
+
+
 def shapes_binary_identical(dim=100):
     """
     Allowed shapes for binary operators that need the two matrices to be the
     same shape, e.g. addition.
     """
-    return [(x, x) for x in shapes_unary(dim)]
+    return [(x, x) for x in shapes_unary_all(dim)]
 
 
 def shapes_binary_bad_identical(dim=100):
@@ -44,7 +51,7 @@ def shapes_binary_bad_identical(dim=100):
     """
     return [
         (x, y)
-        for x, y in itertools.product(shapes_unary(dim), repeat=2)
+        for x, y in itertools.product(shapes_unary_all(dim), repeat=2)
         if x.values[0] != y.values[0]
     ]
 
@@ -54,7 +61,7 @@ def shapes_binary_unrestricted(dim=100):
     Allowed shapes for binary operators which can take any shapes, e.g. the
     Kronecker product.
     """
-    return list(itertools.product(shapes_unary(dim), repeat=2))
+    return list(itertools.product(shapes_unary_all(dim), repeat=2))
 
 
 def shapes_binary_bad_unrestricted(dim=100):
@@ -74,7 +81,7 @@ def shapes_binary_matmul(dim=100):
     """
     return [
         (x, y)
-        for x, y in itertools.product(shapes_unary(dim), repeat=2)
+        for x, y in itertools.product(shapes_unary_all(dim), repeat=2)
         if x.values[0][1] == y.values[0][0]
     ]
 
@@ -87,7 +94,7 @@ def shapes_binary_bad_matmul(dim=100):
     """
     return [
         (x, y)
-        for x, y in itertools.product(shapes_unary(dim), repeat=2)
+        for x, y in itertools.product(shapes_unary_all(dim), repeat=2)
         if x.values[0][1] != y.values[0][0]
     ]
 
@@ -371,7 +378,7 @@ class UnaryOpMixin(_GenericOpMixin):
     negation).  Only generates the test `mathematically_correct`, since there
     can't be a shape mismatch when there's only one argument.
     """
-    shapes = [(x,) for x in shapes_unary()]
+    shapes = [(x,) for x in shapes_unary_all()]
 
     def test_mathematically_correct(self, op, data_m, out_type):
         matrix = data_m()
@@ -391,7 +398,7 @@ class UnaryScalarOpMixin(_GenericOpMixin):
     the test `mathematically_correct`, since there can't be a shape mismatch
     when there's only one Data argument.
     """
-    shapes = [(x,) for x in shapes_unary()]
+    shapes = [(x,) for x in shapes_unary_all()]
 
     @pytest.mark.parametrize('scalar', [
         pytest.param(0, id='zero'),
@@ -528,6 +535,62 @@ class TestConj(UnaryOpMixin):
         pytest.param(data.conj_csr, CSR, CSR),
         pytest.param(data.conj_dense, Dense, Dense),
     ]
+
+
+class TestExpect(BinaryOpMixin):
+    def op_numpy(self, op, state):
+        if op.shape[0] == state.shape[1]:
+            return np.trace(op @ state)
+        return state.conj().T @ op @ state
+
+    specialisations = [
+        pytest.param(data.expect_csr, CSR, CSR, complex),
+        pytest.param(data.expect_csr_dense, CSR, Dense, complex),
+    ]
+
+    _dim = 100
+    _op = pytest.param((_dim, _dim), id="op")
+    _ket = pytest.param((_dim, 1), id="ket")
+    _dm = pytest.param((_dim, _dim), id="dm")
+    shapes = [
+        (_op, _ket),
+        (_op, _dm),
+    ]
+    bad_shapes = shapes_binary_bad_matmul(_dim)
+
+
+class TestExpectSuper(BinaryOpMixin):
+    def op_numpy(self, op, state):
+        size = int(np.sqrt(state.shape[0]))
+        if size * size != state.shape[0]:
+            raise RuntimeError
+        return np.trace((op @ state).reshape(size, size))
+
+    specialisations = [
+        pytest.param(data.expect_super_csr, CSR, CSR, complex),
+        pytest.param(data.expect_super_csr_dense, CSR, Dense, complex),
+    ]
+
+    _dim = 100
+    _op = pytest.param((_dim, _dim), id="op")
+    _ket = pytest.param((_dim, 1), id="ket")
+    _dm = pytest.param((_dim, _dim), id="dm")
+    shapes = [
+        (_op, _ket),
+    ]
+    bad_shapes = shapes_binary_bad_matmul(_dim) + [(_op, _dm)]
+
+
+class TestExpm(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return scipy.linalg.expm(matrix)
+
+    specialisations = [
+        pytest.param(data.expm_csr, CSR, CSR),
+        pytest.param(data.expm_csr_dense, CSR, Dense),
+    ]
+
+    shapes = [(x,) for x in shapes_unary_square(20)]
 
 
 class TestInner(BinaryOpMixin):
@@ -677,8 +740,8 @@ class TestKron(BinaryOpMixin):
 
 
 class TestMatmul(BinaryOpMixin):
-    def op_numpy(self, left, right):
-        return np.matmul(left, right)
+    def op_numpy(self, left, right, scale=1):
+        return scale * np.matmul(left, right)
 
     shapes = shapes_binary_matmul()
     bad_shapes = shapes_binary_bad_matmul()
@@ -687,6 +750,27 @@ class TestMatmul(BinaryOpMixin):
         pytest.param(data.matmul_csr_dense_dense, CSR, Dense, Dense),
         pytest.param(data.matmul_dense, Dense, Dense, Dense),
     ]
+
+    @pytest.mark.parametrize('scale', [None, 0.2, 0.5j],
+                             ids=['unscaled', 'scale[real]', 'scale[complex]'])
+    def test_mathematically_correct(self, op, data_l, data_r, out_type, scale):
+        """
+        Test that the binary operation is mathematically correct for all the
+        known type specialisations.
+        """
+        left, right = data_l(), data_r()
+        if scale is not None:
+            expected = self.op_numpy(left.to_array(), right.to_array(), scale)
+            test = op(left, right, scale)
+        else:
+            expected = self.op_numpy(left.to_array(), right.to_array(), 1)
+            test = op(left, right)
+        assert isinstance(test, out_type)
+        if issubclass(out_type, Data):
+            assert test.shape == expected.shape
+            np.testing.assert_allclose(test.to_array(), expected, self.tol)
+        else:
+            assert abs(test - expected) < self.tol
 
 
 class TestMul(UnaryScalarOpMixin):
@@ -707,6 +791,87 @@ class TestNeg(UnaryOpMixin):
         pytest.param(data.neg_csr, CSR, CSR),
         pytest.param(data.neg_dense, Dense, Dense),
     ]
+
+
+# Norm tests don't have a larger container class because we use class
+# inheritance to generate our tests, and doing that would spoil it.
+
+class TestNormOne(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return np.linalg.norm(matrix, 1)
+
+    specialisations = [
+        pytest.param(data.norm.one_csr, CSR, float),
+        pytest.param(data.norm.one_dense, Dense, float),
+    ]
+
+
+class TestNormTrace(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return np.linalg.norm(matrix, 'nuc')
+
+    tol = 1e-7
+    shapes = [(x,) for x in shapes_unary_square()]
+    specialisations = [
+        pytest.param(data.norm.trace_csr, CSR, float),
+    ]
+
+
+class TestNormMax(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return np.max(np.abs(matrix))
+
+    specialisations = [
+        pytest.param(data.norm.max_csr, CSR, float),
+        pytest.param(data.norm.max_dense, Dense, float),
+    ]
+
+
+class TestNormFrobenius(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return np.linalg.norm(matrix, 'fro')
+
+    specialisations = [
+        pytest.param(data.norm.frobenius_csr, CSR, float),
+        pytest.param(data.norm.frobenius_dense, Dense, float),
+    ]
+
+
+class TestNormL2(UnaryOpMixin):
+    def op_numpy(self, matrix):
+        return np.linalg.norm(matrix, 'fro')
+
+    _dim = 100
+    shapes = [
+        (pytest.param((_dim, 1), id="ket"),),
+        (pytest.param((1, _dim), id="bra"),),
+    ]
+    specialisations = [
+        pytest.param(data.norm.l2_csr, CSR, float),
+        pytest.param(data.norm.l2_dense, Dense, float),
+    ]
+
+
+class TestPow(UnaryOpMixin):
+    def op_numpy(self, matrix, n):
+        return np.linalg.matrix_power(matrix, n)
+
+    shapes = [(x,) for x in shapes_unary_square()]
+    specialisations = [
+        pytest.param(data.pow_csr, CSR, CSR),
+    ]
+
+    @pytest.mark.parametrize('n', [0, 1, 5, 100])
+    def test_mathematically_correct(self, op, data_m, out_type, n):
+        matrix = data_m()
+        expected = self.op_numpy(matrix.to_array(), n)
+        test = op(matrix, n)
+        assert isinstance(test, out_type)
+        if issubclass(out_type, Data):
+            assert test.shape == expected.shape
+            np.testing.assert_allclose(test.to_array(), expected, self.tol)
+        else:
+            assert abs(test - expected) < self.tol
 
 
 class TestProject(UnaryOpMixin):
@@ -746,7 +911,7 @@ class TestTrace(UnaryOpMixin):
         (pytest.param((100, 100), id="100"),),
     ]
     bad_shapes = [
-        (x,) for x in shapes_unary() if x.values[0][0] != x.values[0][1]
+        (x,) for x in shapes_unary_all() if x.values[0][0] != x.values[0][1]
     ]
     specialisations = [
         pytest.param(data.trace_csr, CSR, complex),
