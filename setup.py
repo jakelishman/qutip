@@ -222,10 +222,11 @@ cfg_vars = distutils.sysconfig.get_config_vars()
 if "CFLAGS" in cfg_vars:
     cfg_vars["CFLAGS"] = cfg_vars["CFLAGS"].replace("-Wstrict-prototypes", "")
 
-
-# TODO: reinstate proper OpenMP handling.
-if '--with-openmp' in sys.argv:
+try:
     sys.argv.remove('--with-openmp')
+    _USE_OPENMP = True
+except ValueError:
+    _USE_OPENMP = False
 
 
 def _combine_args(base, extras):
@@ -255,6 +256,10 @@ class BuildExtOverride(Cython.Distutils.build_ext):
             # These are needed for compiling on macOS >= 10.14.
             cflags += ['-mmacosx-version-min=10.9']
             ldflags += ['-mmacosx-version-min=10.9']
+        if _USE_OPENMP:
+            openmp_flag = '-fopenmp' if compiler != 'msvc' else '/openmp'
+            cflags += [openmp_flag]
+            ldflags += [openmp_flag]
         for extension in self.extensions:
             extension.extra_compile_args =\
                 _combine_args(extension.extra_compile_args, cflags)
