@@ -28,9 +28,9 @@ Operating System :: Unix
 Operating System :: Microsoft :: Windows
 """
 
-# import statements
 import os
 import sys
+
 # The following is required to get unit tests up and running.
 # If the user doesn't have, then that's OK, we'll just skip unit tests.
 try:
@@ -38,7 +38,7 @@ try:
     EXTRA_KWARGS = {
         'tests_require': ['pytest']
     }
-except:
+except ImportError:
     from distutils.core import setup
     from distutils.extension import Extension
     EXTRA_KWARGS = {}
@@ -48,7 +48,6 @@ try:
 except ImportError as e:
     raise ImportError("numpy is required at installation") from e
 
-from Cython.Build import cythonize
 from Cython.Distutils import build_ext
 
 # all information about QuTiP goes here
@@ -81,9 +80,8 @@ PACKAGE_DATA = {
     'qutip/tests/qasm_files': ['*.qasm'],
     'qutip/control': ['*.pyx'],
 }
-# If we're missing numpy, exclude import directories until we can
-# figure them out properly.
-INCLUDE_DIRS = [np.get_include()] if np is not None else []
+
+INCLUDE_DIRS = [np.get_include()]
 NAME = "qutip"
 AUTHOR = ("Alexander Pitchford, Paul D. Nation, Robert J. Johansson, "
           "Chris Granade, Arne Grimsmo, Nathan Shammah, Shahnawaz Ahmed, "
@@ -117,13 +115,6 @@ def git_short_hash():
 FULLVERSION = VERSION
 if not ISRELEASED:
     FULLVERSION += '.dev'+str(MICRO)+git_short_hash()
-
-# NumPy's distutils reads in versions differently than
-# our fallback. To make sure that versions are added to
-# egg-info correctly, we need to add FULLVERSION to
-# EXTRA_KWARGS if NumPy wasn't imported correctly.
-if np is None:
-    EXTRA_KWARGS['version'] = FULLVERSION
 
 
 def write_version_py(filename='qutip/version.py'):
@@ -205,13 +196,8 @@ cy_exts = {
 # Extra link args
 _link_flags = []
 
-# If on Win and Python version >= 3.5 and not in MSYS2
-# (i.e. Visual studio compile)
-if (
-    sys.platform == 'win32'
-    and int(str(sys.version_info[0])+str(sys.version_info[1])) >= 35
-    and os.environ.get('MSYSTEM') is None
-):
+# If on Windows and not in MSYS2 (i.e. Visual studio compile)
+if sys.platform == 'win32' and os.environ.get('MSYSTEM') is None:
     _compiler_flags = ['/w', '/Ox']
 # Everything else
 else:
@@ -222,9 +208,6 @@ else:
         _link_flags.append('-mmacosx-version-min=10.9')
 
 EXT_MODULES = []
-_include = [
-    np.get_include(),
-]
 
 # Add Cython files from qutip
 for package, files in cy_exts.items():
@@ -234,7 +217,7 @@ for package, files in cy_exts.items():
         _sources = [_file, 'qutip/core/data/src/matmul_csr_vector.cpp']
         EXT_MODULES.append(Extension(_module,
                                      sources=_sources,
-                                     include_dirs=_include,
+                                     include_dirs=INCLUDE_DIRS,
                                      extra_compile_args=_compiler_flags,
                                      extra_link_args=_link_flags,
                                      language='c++'))
