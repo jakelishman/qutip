@@ -48,7 +48,8 @@ try:
 except ImportError as e:
     raise ImportError("numpy is required at installation") from e
 
-from Cython.Distutils import build_ext
+import Cython.Distutils
+
 
 # all information about QuTiP goes here
 MAJOR = 5
@@ -193,21 +194,10 @@ cy_exts = {
     ],
 }
 
-# Extra link args
-_link_flags = []
-
-# If on Windows and not in MSYS2 (i.e. Visual studio compile)
-if sys.platform == 'win32' and os.environ.get('MSYSTEM') is None:
-    _compiler_flags = ['/w', '/Ox']
-# Everything else
-else:
-    _compiler_flags = ['-w', '-O3', '-funroll-loops']
-    if sys.platform == 'darwin':
-        # These are needed for compiling on OSX 10.14+
-        _compiler_flags.append('-mmacosx-version-min=10.9')
-        _link_flags.append('-mmacosx-version-min=10.9')
-
 EXT_MODULES = []
+MACROS = [
+    ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION'),
+]
 
 # Add Cython files from qutip
 for package, files in cy_exts.items():
@@ -215,15 +205,18 @@ for package, files in cy_exts.items():
         _module = 'qutip' + ('.' + package if package else '') + '.' + file
         _file = os.path.join('qutip', *package.split("."), file + '.pyx')
         _sources = [_file, 'qutip/core/data/src/matmul_csr_vector.cpp']
-        EXT_MODULES.append(Extension(_module,
-                                     sources=_sources,
-                                     include_dirs=INCLUDE_DIRS,
-                                     extra_compile_args=_compiler_flags,
-                                     extra_link_args=_link_flags,
-                                     language='c++'))
+        _ext = Extension(
+            _module,
+            sources=_sources,
+            include_dirs=INCLUDE_DIRS,
+            language='c++',
+            define_macros=MACROS,
+        )
+        EXT_MODULES.append(_ext)
 
 
-# Remove -Wstrict-prototypes from cflags
+# Remove -Wstrict-prototypes from cflags - it's valid for C, but not C++.
+# distutils still seems to inject it, though, so we may need to remove it.
 import distutils.sysconfig
 cfg_vars = distutils.sysconfig.get_config_vars()
 if "CFLAGS" in cfg_vars:
@@ -233,6 +226,41 @@ if "CFLAGS" in cfg_vars:
 # TODO: reinstate proper OpenMP handling.
 if '--with-openmp' in sys.argv:
     sys.argv.remove('--with-openmp')
+
+
+def _combine_args(base, extras):
+    if base is None:
+        base = []
+    return base + extras
+
+
+class BuildExtOverride(Cython.Distutils.build_ext):
+    """
+    Provide overrides for the default setuptools build_ext command to handle
+    platform- and compiler-specific command-line options.  This inherits from
+    the Cython version because we want to use their automatic cythonisation and
+    parallel building capabilities in `finalize_options()`.
+    """
+    def build_extensions(self):
+        # At this point, setuptools has chosen the compiler, so we don't need
+        # to guess based on the environment.
+        compiler = self.compiler.compiler_type
+        cflags = []
+        ldflags = []
+        if compiler == 'msvc':
+            cflags += ['/Ox']
+        else:
+            cflags += ['-w', '-O3', '-funroll-loops']
+        if 'darwin' in sys.platform:
+            # These are needed for compiling on macOS >= 10.14.
+            cflags += ['-mmacosx-version-min=10.9']
+            ldflags += ['-mmacosx-version-min=10.9']
+        for extension in self.extensions:
+            extension.extra_compile_args =\
+                _combine_args(extension.extra_compile_args, cflags)
+            extension.extra_link_args =\
+                _combine_args(extension.extra_link_args, ldflags)
+        super().build_extensions()
 
 
 # Setup commands go here
