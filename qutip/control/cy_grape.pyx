@@ -67,7 +67,7 @@ cpdef CTYPE_t cy_overlap(object op1, object op2):
     cdef np.ndarray[ITYPE_t, ndim=1, mode="c"] idx2 = op2.indices
     cdef np.ndarray[ITYPE_t, ndim=1, mode="c"] ptr2 = op2.indptr
 
-    cdef int num_rows = ptr1.shape[0]-1
+    cdef int num_rows = op1.indptr.shape[0] - 1
 
     for row in range(num_rows):
 

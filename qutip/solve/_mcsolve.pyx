@@ -132,7 +132,7 @@ cdef class CyMcOde:
         cdef np.ndarray[double, ndim=1] tlist = np.array(tlist_, dtype=np.double)
         cdef np.ndarray[complex, ndim=1] y_prev
         cdef np.ndarray[complex, ndim=1] out_psi = ODE._y
-        cdef int num_times = tlist.shape[0]
+        cdef int num_times = len(tlist_)
         cdef int ii, which, k
         cdef double norm2_prev, norm2_psi
         cdef double t_prev
@@ -366,7 +366,7 @@ cdef class CyMcOdeDiag(CyMcOde):
         cdef np.ndarray[double, ndim=1] rand_vals
         cdef np.ndarray[double, ndim=1] tlist = np.array(tlist_)
         cdef np.ndarray[complex, ndim=1] out_psi = initial_vector.copy()
-        cdef int ii, k, use_quick, num_times=tlist.shape[0]
+        cdef int ii, k, use_quick, num_times=len(tlist_)
         cdef double norm2_prev
         dt = tlist_[1]-tlist_[0]
         if np.allclose(np.diff(tlist_), dt):
