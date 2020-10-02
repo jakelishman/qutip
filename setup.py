@@ -48,7 +48,7 @@ try:
 except ImportError as e:
     raise ImportError("numpy is required at installation") from e
 
-import Cython.Distutils
+from Cython.Build import cythonize
 
 
 # all information about QuTiP goes here
@@ -235,12 +235,13 @@ def _combine_args(base, extras):
     return base + extras
 
 
-class BuildExtOverride(Cython.Distutils.build_ext):
+class BuildExtOverride(distutils.command.build_ext.build_ext):
     """
     Provide overrides for the default setuptools build_ext command to handle
-    platform- and compiler-specific command-line options.  This inherits from
-    the Cython version because we want to use their automatic cythonisation and
-    parallel building capabilities in `finalize_options()`.
+    platform- and compiler-specific command-line options.  We don't inherit
+    from the Cython version, because that does not handle cythonising multiple
+    extensions simultaneously (at least as of 0.29); it does not recompile a
+    .pyx file if a cimport-ed .pxd file changes.
     """
     def build_extensions(self):
         # At this point, setuptools has chosen the compiler, so we don't need
