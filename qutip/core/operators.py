@@ -52,6 +52,39 @@ from .qobj import Qobj
 from .dimensions import flatten
 
 
+class _constant_operator_function:
+    """
+    A function which returns a constant operator.  See the docstring of the
+    ``__call__`` method for more information if you can see this message.
+    """
+
+    def __init__(self, name: str, base: Qobj, docstring: str):
+        self.__name__ = self.__qualname__ = name
+        # We set both the instance and __call__ method docstring to make sure
+        # that the user will be able to see it; help() gets the docstring from
+        # a class descriptor, so misses instance docstrings, but it will catch
+        # the one on the method call.
+        self.__doc__ = self.__call__.__func__.__doc__ = docstring
+        self._base = base
+        self._cache = {dtype: base.to(dtype) for dtype in _data.to.dtypes}
+
+    def __call__(self, *, dtype=None):
+        if dtype is None:
+            return self._base.copy()
+        dtype = _data.to.parse(dtype)
+        # The try/except is necessary in case a new dtype has been added to
+        # _data.to since this object was initialised.
+        try:
+            return self._cache[dtype].copy()
+        except KeyError:
+            pass
+        self._cache[dtype] = self._base.to(dtype)
+        # Don't return the object we just created, in case the user mutates the
+        # data backing---that would spoil our cache.
+        return self._cache[dtype].copy()
+
+
+
 def qdiags(diagonals, offsets, dims=None, shape=None, *, dtype=_data.CSR):
     """
     Constructs an operator from an array of diagonals.
@@ -322,96 +355,79 @@ def spin_J_set(j, *, dtype=_data.CSR):
     return jmat(j, dtype=dtype)
 
 
+#
 # Pauli spin-1/2 operators.
 #
-# These are so common in quantum information that we want them to be
-# near-instantaneous to initialise, so we cache them at package import, and
-# just return copies when someone requests one.
-_SIGMAP = jmat(0.5, '+')
-_SIGMAM = jmat(0.5, '-')
-_SIGMAX = 2 * jmat(0.5, 'x')
-_SIGMAY = 2 * jmat(0.5, 'y')
-_SIGMAZ = 2 * jmat(0.5, 'z')
-
-
-def sigmap():
-    """Creation operator for Pauli spins.
+sigmap = _constant_operator_function(
+    'sigmap', jmat(0.5, '+'),
+    """
+    Creation operator for Pauli spins.
 
     Examples
     --------
-    >>> sigmap() # doctest: +SKIP
-    Quantum object: dims = [[2], [2]], \
-shape = [2, 2], type = oper, isHerm = False
+    >>> sigmap()
+    Quantum object: dims=[[2], [2]], shape=(2, 2), type='oper', isherm=False
     Qobj data =
     [[ 0.  1.]
      [ 0.  0.]]
-
+    """,
+)
+sigmam = _constant_operator_function(
+    'sigmam', jmat(0.5, '-'),
     """
-    return _SIGMAP.copy()
-
-
-def sigmam():
-    """Annihilation operator for Pauli spins.
+    Annihilation operator for Pauli spins.
 
     Examples
     --------
-    >>> sigmam() # doctest: +SKIP
-    Quantum object: dims = [[2], [2]], \
-shape = [2, 2], type = oper, isHerm = False
+    >>> sigmam()
+    Quantum object: dims=[[2], [2]], shape=(2, 2), type='oper', isherm=False
     Qobj data =
     [[ 0.  0.]
      [ 1.  0.]]
-
-    """
-    return _SIGMAM.copy()
-
-
-def sigmax():
-    """Pauli spin 1/2 sigma-x operator
+    """,
+)
+sigmax = _constant_operator_function(
+    'sigmax', 2*jmat(0.5, 'x'),
+    r"""
+    Pauli spin-:math:`\frac12` :math:`\sigma_x` operator.
 
     Examples
     --------
-    >>> sigmax() # doctest: +SKIP
-    Quantum object: dims = [[2], [2]], \
-shape = [2, 2], type = oper, isHerm = False
+    >>> sigmax()
+    Quantum object: dims=[[2], [2]], shape=(2, 2), type='oper', isherm=True
     Qobj data =
     [[ 0.  1.]
      [ 1.  0.]]
-
-    """
-    return _SIGMAX.copy()
-
-
-def sigmay():
-    """Pauli spin 1/2 sigma-y operator.
+    """,
+)
+sigmay = _constant_operator_function(
+    'sigmay', 2*jmat(0.5, 'y'),
+    r"""
+    Pauli spin-:math:`\frac12` :math:`\sigma_y` operator.
 
     Examples
     --------
-    >>> sigmay() # doctest: +SKIP
-    Quantum object: dims = [[2], [2]], \
-shape = [2, 2], type = oper, isHerm = True
+    >>> sigmay()
+    Quantum object: dims=[[2], [2]], shape=(2, 2), type='oper', isherm=True
     Qobj data =
     [[ 0.+0.j  0.-1.j]
      [ 0.+1.j  0.+0.j]]
-
-    """
-    return _SIGMAY.copy()
-
-
-def sigmaz():
-    """Pauli spin 1/2 sigma-z operator.
+    """,
+)
+sigmaz = _constant_operator_function(
+    'sigmaz', 2*jmat(0.5, 'z'),
+    r"""
+    Pauli spin-:math:`\frac12` :math:`\sigma_z` operator.
 
     Examples
     --------
-    >>> sigmaz() # doctest: +SKIP
-    Quantum object: dims = [[2], [2]], \
-shape = [2, 2], type = oper, isHerm = True
+    >>> sigmaz()
+    Quantum object: dims=[[2], [2]], shape=(2, 2), type='oper', isherm=True
     Qobj data =
     [[ 1.  0.]
      [ 0. -1.]]
-
-    """
-    return _SIGMAZ.copy()
+    """,
+)
 
 
 def destroy(N, offset=0, *, dtype=_data.CSR):
