@@ -40,7 +40,16 @@ __all__ = ['jmat', 'spin_Jx', 'spin_Jy', 'spin_Jz', 'spin_Jm', 'spin_Jp',
            'destroy', 'create', 'qeye', 'identity', 'position', 'momentum',
            'num', 'squeeze', 'squeezing', 'displace', 'commutator',
            'qutrit_ops', 'qdiags', 'phase', 'qzero', 'enr_destroy',
-           'enr_identity', 'charge', 'tunneling']
+           'enr_identity', 'charge', 'tunneling',
+           'expand_operator', 'controlled',
+           'x_gate', 'cx_gate', 'rx_gate', 'cnot_gate',
+           'y_gate', 'cy_gate', 'ry_gate',
+           'z_gate', 'cz_gate', 'rz_gate', 'csign_gate',
+           's_gate', 'cs_gate', 't_gate', 'ct_gate',
+           'berkeley_gate', 'u3_gate', 'swap_gate', 'iswap_gate',
+           'hadamard_gate', 'sqrtnot_gate', 'phase_gate', 'fredkin_gate',
+           'toffoli_gate', 'sqrtswap_gate', 'sqrtiswap_gate', 'swapalpha_gate',
+           'hadamard_transform', 'qft']
 
 import numbers
 
@@ -50,6 +59,129 @@ import scipy.sparse
 from . import data as _data
 from .qobj import Qobj
 from .dimensions import flatten
+from ..settings import settings as _settings
+
+
+def _expand_operator_check(operator, new_indices, dimensions):
+    """
+    Internal function for validating the inputs to :obj:`expand_operator`.
+    """
+    if not isinstance(operator, Qobj):
+        raise TypeError(
+            "expected a Qobj for operator but got {}".format(operator)
+        )
+    if operator.dims[0] != operator.dims[1]:
+        raise ValueError(
+            "operator is not square; its dimensions are {}"
+            .format(operator.dims)
+        )
+    if isinstance(new_indices, numbers.Integral):
+        new_indices = [new_indices]
+    new_indices = list(new_indices)
+    dimensions = tuple(dimensions)
+    for old_i, new_i in enumerate(new_indices):
+        if not 0 <= new_i < len(dimensions):
+            raise ValueError(
+                "found an index {} outside the number of new dimensions {}"
+                .format(new_i, len(dimensions))
+            )
+        if operator.dims[0][old_i] != dimensions[new_i]:
+            raise ValueError(
+                "dimension {} is not the same between input {} and output {}"
+                .format(old_i, operator.dims[0][old_i], dimensions[new_i])
+            )
+    return operator, new_indices, dimensions
+
+
+def expand_operator(operator, new_indices, dimensions):
+    """
+    Expand an operator, which potentially has a tensor structure, onto a larger
+    square Hilbert space, by inserting identities into the "missing" spaces.
+    The subspaces of the operator can be mapped to arbitrary locations in the
+    new object.  For example, this function can be used to map a CY gate
+    controlled by qubit 0 targetting qubit 1 into a 5-qubit space with qubit 4
+    as the control and qubit 3 as the target by ::
+
+        expand_operator(cy_gate(0, 1), (4, 3), [2]*5)
+
+    Parameters
+    ----------
+    operator : :obj:`.Qobj`
+        A square quantum operator.
+    new_indices : Iterable[int]
+        The indices of the subspaces of ``dimensions`` which the output
+        operator should act on.  These are given in order relative to how they
+        appear in the dimensions of ``operator``.
+    dimensions : Iterable[int]
+        The dimensions of the new Hilbert space.  All elements are square, so
+        this object should be an iterable of their sizes.
+
+    Returns
+    -------
+    :obj:`.Qobj`
+        The operator expanded into a larger qubit space.
+
+    Examples
+    --------
+    The default :obj:`.cx_gate` is controlled by qubit 0 and targets qubit 1.
+
+    >>> cx_gate()
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=True
+    Qobj data =
+    [[1. 0. 0. 0.]
+     [0. 1. 0. 0.]
+     [0. 0. 0. 1.]
+     [0. 0. 1. 0.]]
+
+    We can use :obj:`.expand_operator` to simply reorder the control and the
+    target.
+
+    >>> expand_operator(cx_gate(), [1, 0], [2, 2])
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=True
+    Qobj data =
+    [[1. 0. 0. 0.]
+     [0. 0. 0. 1.]
+     [0. 0. 1. 0.]
+     [0. 1. 0. 0.]]
+
+    A more fitting example for the name of the function is to expand an
+    operator into a larger Hilbert space.  Here we take the same controlled-X
+    gate, and map it into a 3-qubit Hilbert space, with the control on the
+    first qubit and the target on the last.
+
+    >>> expand_operator(cx_gate(), [0, 2], [2, 2, 2])
+    Quantum object: dims=[[2, 2, 2], [2, 2, 2]], shape=(8, 8), type='oper', \
+isherm=True
+    Qobj data =
+    [[1. 0. 0. 0. 0. 0. 0. 0.]
+     [0. 1. 0. 0. 0. 0. 0. 0.]
+     [0. 0. 1. 0. 0. 0. 0. 0.]
+     [0. 0. 0. 1. 0. 0. 0. 0.]
+     [0. 0. 0. 0. 0. 1. 0. 0.]
+     [0. 0. 0. 0. 1. 0. 0. 0.]
+     [0. 0. 0. 0. 0. 0. 0. 1.]
+     [0. 0. 0. 0. 0. 0. 1. 0.]]
+    """
+    # Protected import to avoid circular dependencies.
+    from .tensor import tensor
+    operator, new_indices, dimensions =\
+        _expand_operator_check(operator, new_indices, dimensions)
+    new_indices_set = set(new_indices)
+    id_dimensions = []
+    permutation = [None] * len(dimensions)
+    for old_i, new_i in enumerate(new_indices):
+        permutation[new_i] = old_i
+    ptr = len(new_indices)
+    for new_i, dim in enumerate(dimensions):
+        if new_i in new_indices_set:
+            continue
+        id_dimensions.append(dim)
+        permutation[new_i] = ptr
+        ptr += 1
+    out = tensor(operator, qeye(id_dimensions)) if id_dimensions else operator
+    return out.permute(permutation)
 
 
 class _constant_operator_function:
@@ -82,7 +214,6 @@ class _constant_operator_function:
         # Don't return the object we just created, in case the user mutates the
         # data backing---that would spoil our cache.
         return self._cache[dtype].copy()
-
 
 
 def qdiags(diagonals, offsets, dims=None, shape=None, *, dtype=_data.CSR):
@@ -1067,3 +1198,498 @@ def tunneling(N, m=1, *, dtype=_data.CSR):
     T = qdiags(diags, [m, -m], dtype=dtype)
     T.isherm = True
     return T
+
+
+# Gate-like operators, imported from the 4.x qutip.qip for convenience, since
+# qip is split out into its own package now.
+
+
+def controlled(operator: Qobj, *, dtype=_data.CSR):
+    """
+    Making a simple controlled gate out of a given operator.  For a given
+    object :math:`X` this produces :math:`\\ket0\\bra0\\otimes I +
+    \\ket1\\bra1\\otimes X`.
+
+    If you need more advanced usage, including arbitrary controls and targets,
+    consider using this function in conjunction with :obj:`.expand_operator`,
+    or use the full ``qutip-qip`` package.
+
+    Examples
+    --------
+    >>> controlled(rx_gate(np.pi/3))
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=False
+    Qobj data =
+    [[1.       +0.j  0.       +0.j  0.       +0.j  0.       +0.j ]
+     [0.       +0.j  1.       +0.j  0.       +0.j  0.       +0.j ]
+     [0.       +0.j  0.       +0.j  0.8660254+0.j  0.       -0.5j]
+     [0.       +0.j  0.       +0.j  0.       -0.5j 0.8660254+0.j ]]
+    """
+    # This function cannot import tensor because it is evaluated during
+    # initialisation of the module, and there would be a circular dependency.
+    # Similarly, we cannot import states, so we have to reinvent the wheel with
+    # projection operators as well.
+    dtype = _data.to.parse(dtype)
+    _0 = _data.one_element[dtype]((2, 2), (0, 0), 1)
+    _1 = _data.one_element[dtype]((2, 2), (1, 1), 1)
+    if operator.dims[0] != operator.dims[1]:
+        raise ValueError(
+            "expected a square operator but got {}".format(operator.dims)
+        )
+    return Qobj(
+        _data.add(
+            _data.kron(_0, _data.identity[dtype](operator.shape[0])),
+            _data.kron(_1, operator.data),
+            dtype=dtype,
+        ),
+        dims=[[2] + operator.dims[0]]*2, copy=False, type='oper',
+        isherm=operator.isherm, isunitary=operator.isunitary,
+    )
+
+
+def rx_gate(angle: float, *, dtype=_data.Dense):
+    r"""
+    Single-qubit rotation of ``angle`` radians around the :math:`x`-axis.  In
+    the :math:`\{\ket0,\ket1\}` basis this has the matrix representation
+
+    .. math::
+        R_x(\theta) = \begin{pmatrix}
+            \cos(\theta/2) & -i\sin(\theta/2)\\
+            -i\sin(\theta/2) & \cos(\theta/2)\\
+        \end{pmatrix}
+    """
+    if not isinstance(angle, numbers.Real):
+        raise TypeError(
+            "'angle' must be a real number, but got {!r}".format(angle)
+        )
+    diag, off = np.cos(0.5*angle), -1j*np.sin(0.5*angle)
+    data = _data.Dense(np.array([[diag, off], [off, diag]]))
+    herm = 2*abs(off.imag) < _settings.core['atol']
+    return Qobj(
+        _data.to(dtype, data),
+        copy=False, dims=[[2], [2]], type='oper', isunitary=True, isherm=herm,
+    )
+
+
+def ry_gate(angle: float, *, dtype=_data.Dense):
+    r"""
+    Single-qubit rotation of ``angle`` radians around the :math:`y`-axis.  In
+    the :math:`\{\ket0,\ket1\}` basis this has the matrix representation
+
+    .. math::
+        R_y(\theta) = \begin{pmatrix}
+            \cos(\theta/2) & -\sin(\theta/2)\\
+            \sin(\theta/2) & \cos(\theta/2)\\
+        \end{pmatrix}
+    """
+    if not isinstance(angle, numbers.Real):
+        raise TypeError(
+            "'angle' must be a real number, but got {!r}".format(angle)
+        )
+    diag, off = np.cos(0.5*angle), np.sin(0.5*angle)
+    data = _data.Dense(
+        np.array([[diag, -off], [off, diag]], dtype=np.complex128),
+    )
+    herm = 2*abs(off) < _settings.core['atol']
+    return Qobj(
+        _data.to(dtype, data),
+        copy=False, dims=[[2], [2]], type='oper', isunitary=True, isherm=herm,
+    )
+
+
+def rz_gate(angle: float, *, dtype=_data.CSR):
+    r"""
+    Single-qubit rotation of ``angle`` radians around the :math:`z`-axis.  In
+    the :math:`\{\ket0,\ket1\}` basis this has the matrix representation
+
+    .. math::
+        R_z(\theta) = \begin{pmatrix}
+            e^{-i\theta/2} & 0\\
+            0 & e^{i\theta/2}
+        \end{pmatrix}
+    """
+    if not isinstance(angle, numbers.Real):
+        raise TypeError(
+            "'angle' must be a real number, but got {!r}".format(angle)
+        )
+    diag = np.exp(-0.5j * angle)
+    herm = abs(diag.imag) < _settings.core['atol']
+    return Qobj(
+        _data.diag[dtype](np.array([[diag, diag.conjugate()]]), [0]),
+        copy=False, dims=[[2], [2]], type='oper', isunitary=True, isherm=herm,
+    )
+
+
+def u3_gate(theta: float, phi: float, lambda_: float, *, dtype=_data.Dense):
+    r"""
+    OpenQASM :math:`U_3` gate, parametrised by three angles.  In terms of
+    single-qubit rotations, this is equivalent (up to a global phase) to
+
+    .. math::
+        U_3(\theta, \phi, \lambda) = R_z(\phi)R_y(\theta)R_z(\gamma)
+
+    or in matrix form
+
+    .. math::
+        U_3(\theta, \phi, \lambda) = \begin{pmatrix}
+            \cos(\theta/2) & -e^{i\lambda}\sin(\theta/2)\\
+            e^{i\phi}\sin(\theta/2) & e^{i(\phi+\lambda)}\cos(\theta/2)
+        \end{pmatrix}
+    """
+    cos, sin = np.cos(0.5*theta), np.sin(0.5*theta)
+    ephi, elambda = np.exp(1j*phi), np.exp(1j*lambda_)
+    data = _data.Dense(
+        np.array([[cos, -elambda*sin], [ephi*sin, ephi*elambda*cos]],
+                 dtype=np.complex128),
+    )
+    return Qobj(
+        _data.to(dtype, data),
+        copy=False, dims=[[2], [2]], type='oper', isunitary=True,
+    )
+
+
+def phase_gate(angle: float, *, dtype=_data.Dense):
+    r"""
+    Single-qubit phase shift of the :math:`\ket1` state relative to the
+    :`math:`\ket0` state.  This is equivalent, up to a global phase, as
+    :obj:`.rz_gate`.
+    """
+    if not isinstance(angle, numbers.Real):
+        raise TypeError(
+            "'angle' must be a real number, but got {!r}".format(angle)
+        )
+    diag = np.exp(1j * angle)
+    data = _data.Dense(
+        np.array([[1, 0], [0, diag]], dtype=np.complex128),
+    )
+    herm = abs(diag.imag) < _settings.core['atol']
+    return Qobj(
+        _data.to(dtype, data),
+        copy=False, dims=[[2], [2]], type='oper', isunitary=True, isherm=herm,
+    )
+
+
+def swapalpha_gate(alpha: float, *, dtype=_data.Dense):
+    r"""
+    Unitary :math:`\text{SWAP}^\alpha` gate.  In matrix form, this is
+
+    .. math::
+        \text{SWAP}^\alpha = \begin{pmatrix}
+            1 & 0 & 0 & 0\\
+            0 & \frac12(1 + e^{i\pi\alpha}) & \frac12(1 - e^{i\pi\alpha}) & 0\\
+            0 & \frac12(1 - e^{i\pi\alpha}) & \frac12(1 + e^{i\pi\alpha}) & 0\\
+            0 & 0 & 0 & 1
+        \end{pmatrix}
+    """
+    if not isinstance(alpha, numbers.Real):
+        raise TypeError(
+            "'alpha' must be a real number, but got {!r}".format(alpha)
+        )
+    phase = np.exp(1j * np.pi * alpha)
+    data = _data.Dense(np.array([
+        [1, 0, 0, 0],
+        [0, 0.5*(1 + phase), 0.5*(1 - phase), 0],
+        [0, 0.5*(1 - phase), 0.5*(1 + phase), 0],
+        [0, 0, 0, 1],
+    ]))
+    return Qobj(
+        _data.to(dtype, data),
+        copy=False, dims=[[2, 2], [2, 2]], type='oper', isunitary=True,
+    )
+
+
+def hadamard_transform(N: int, *, dtype=_data.Dense):
+    """
+    General Hadamard transformation on many qubits.  This the Hadamard matrix
+    of size :math:`2^n`, scaled to be unitary.
+
+    See Also
+    --------
+    hadamard_gate :
+        convenience function for a single-qubit Hadamard transformation.
+    """
+    if not isinstance(N, numbers.Integral) or N <= 0:
+        raise (ValueError if isinstance(N, numbers.Integral) else TypeError)(
+            "'N' must be a positive integer, but is {}".format(N)
+        )
+    size = 2**N
+    return Qobj(
+        (1/np.sqrt(size)) * scipy.linalg.hadamard(2**N, dtype=np.complex128),
+        dims=[[2]*N, [2]*N], type='oper', isunitary=True, isherm=True,
+    ).to(dtype)
+
+
+def qft(N: int, *, dtype=_data.Dense):
+    """
+    Quantum Fourier transform operator on ``N`` qubits.
+    """
+    if not isinstance(N, numbers.Integral) or N <= 0:
+        raise (ValueError if isinstance(N, numbers.Integral) else TypeError)(
+            "'N' must be a positive integer, but is {}".format(N)
+        )
+    size = 2**N
+    ns = np.arange(size)
+    data = np.exp(2j*np.pi/size * np.outer(ns, ns))/np.sqrt(size)
+    return Qobj(
+        _data.Dense(data, copy=False),
+        copy=False, type='oper', isherm=True, isunitary=True, dims=[[2]*N]*2,
+    ).to(dtype)
+
+
+x_gate = _constant_operator_function('x_gate', sigmax(), sigmax.__doc__)
+# Name alias - CNOT is the more common name, so we use that in the docs.
+cnot_gate = cx_gate = _constant_operator_function(
+    'cnot_gate',
+    controlled(sigmax()),
+    """
+    Controlled-NOT gate.  This is a Pauli-X operation on the second qubit if
+    the first qubit is in the :math:`\\ket1` state.
+
+    Examples
+    --------
+    >>> cnot_gate()
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=True
+    [[1. 0. 0. 0.]
+     [0. 1. 0. 0.]
+     [0. 0. 0. 1.]
+     [0. 0. 1. 0.]]
+    """,
+)
+y_gate = _constant_operator_function('y_gate', sigmay(), sigmay.__doc__)
+cy_gate = _constant_operator_function(
+    'cy_gate',
+    controlled(sigmay()),
+    """
+    Controlled Pauli spin-:math:`\\frac12` :math:`\\sigma_y` gate.
+
+    Examples
+    --------
+    >>> cy_gate()
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=True
+    [[ 1.+0.j  0.+0.j  0.+0.j  0.+0.j]
+     [ 0.+0.j  1.+0.j  0.+0.j  0.+0.j]
+     [ 0.+0.j  0.+0.j  0.+0.j -0.-1.j]
+     [ 0.+0.j  0.+0.j  0.+1.j  0.+0.j]]
+    """,
+)
+z_gate = _constant_operator_function('z_gate', sigmaz(), sigmaz.__doc__)
+# Name alias - CZ is more common, so use that in docs.
+csign_gate = cz_gate = _constant_operator_function(
+    'cz_gate',
+    controlled(sigmaz()),
+    """
+    Controlled Pauli spin-:math:`\\frac12` :math:`\\sigma_z` gate.
+
+    Examples
+    --------
+    >>> cz_gate()
+    Quantum object: dims=[[2, 2], [2, 2]], shape=(4, 4), type='oper', \
+isherm=True
+    [[ 1.  0.  0.  0.]
+     [ 0.  1.  0.  0.]
+     [ 0.  0.  1.  0.]
+     [ 0.  0.  0. -1.]]
+    """,
+)
+s_gate = _constant_operator_function(
+    's_gate',
+    Qobj(
+        [
+            [1, 0],
+            [0, -1j],
+        ],
+        type='oper', dims=[[2], [2]], isherm=False, isunitary=False,
+    ),
+    r"""
+    Spin-:math:`\frac12` Pauli :math:`\sqrt Z`-gate, equivalent to a rotation
+    of :math:`\pi/2` around the :math:`z`-axis.
+    """,
+)
+cs_gate = _constant_operator_function(
+    'cs_gate',
+    controlled(s_gate()),
+    r"""
+    Controlled spin-:math:`\frac12` Pauli :math:`\sqrt Z`-gate, equivalent to a
+    rotation of :math:`\pi/2` around the :math:`z`-axis on the second qubit, if
+    the first is in state :math:`\ket1`.
+    """,
+)
+t_gate = _constant_operator_function(
+    't_gate',
+    Qobj(
+        [[1, 0], [0, np.exp(0.25j*np.pi)]],
+        type='oper', dims=[[2], [2]], isherm=False, isunitary=False,
+    ),
+    r"""
+    Spin-:math:`\frac12` Pauli :math:`\sqrt[4]Z`-gate, equivalent to a rotation
+    of :math:`\pi/4` around the :math:`z`-axis.
+    """,
+)
+ct_gate = _constant_operator_function(
+    'ct_gate',
+    controlled(t_gate()),
+    r"""
+    Controlled spin-:math:`\frac12` Pauli :math:`\sqrt[4]Z`-gate, equivalent to
+    a rotation of :math:`\pi/4` around the :math:`z`-axis on the second qubit,
+    if the first is in state :math:`\ket1`.
+    """,
+)
+sqrtnot_gate = _constant_operator_function(
+    'sqrtnot_gate',
+    Qobj(
+        [
+            [0.5+0.5j, 0.5-0.5j],
+            [0.5-0.5j, 0.5+0.5j],
+        ],
+        type='oper', dims=[[2], [2]], isherm=False, isunitary=False,
+    ),
+    r"""
+    Spin-:math:`\frac12` Pauli :math:`\sqrt X`-gate, equivalent to a rotation
+    of :math:`\pi/2` around the :math:`x`-axis.
+    """,
+)
+hadamard_gate = _constant_operator_function(
+    'hadamard_gate', hadamard_transform(1),
+    r"""
+    Single-qubit Hadamard gate.  In terms of Pauli matrices, this has the
+    representation :math:`(\sigma_x + \sigma_z)/\sqrt2`.
+
+    See Also
+    --------
+    hadamard_transform : Generalised Hadamard transform on many qubits.
+    """,
+)
+berkeley_gate = _constant_operator_function(
+    'berkeley_gate',
+    Qobj(
+        [
+            [np.cos(0.125*np.pi), 0, 0, 1j*np.sin(0.125*np.pi)],
+            [0, np.cos(0.375*np.pi), 1j*np.sin(0.375*np.pi), 0],
+            [0, 1j*np.sin(0.375*np.pi), np.cos(0.375*np.pi), 0],
+            [1j*np.sin(0.125*np.pi), 0, 0, np.cos(0.125*np.pi)],
+        ],
+        type='oper', dims=[[2, 2], [2, 2]], isherm=False, isunitary=True,
+    ),
+    r"""
+    Berkeley :math:`B` gate.  In terms of Pauli operators this is
+
+    .. math::
+        B = \exp\Bigl[\frac{i\pi}{8}\bigl(2X\otimes X + Y\otimes Y\bigr)\Bigr]
+
+    and explicitly in matrix form it is
+
+    .. math::
+
+        B = \begin{pmatrix}
+            \cos(\pi/8) & 0 & 0 & i\sin(\pi/8)\\
+            0 & \cos(3\pi/8) & i\sin(3\pi/8) & 0\\
+            0 & i\sin(3\pi/8) * \cos(3\pi/8) & 0\\
+            i\sin(\pi/8) & 0 & 0 & \cos(\pi/8)
+        \end{pmatrix}
+    """,
+)
+swap_gate = _constant_operator_function(
+    'swap_gate',
+    Qobj(
+        [
+            [1, 0, 0, 0],
+            [0, 0, 1, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1],
+        ],
+        type='oper', dims=[[2, 2], [2, 2]], isherm=True, isunitary=True,
+    ),
+    """Swap gate, swapping the states of two qubits.""",
+)
+iswap_gate = _constant_operator_function(
+    'iswap_gate',
+    Qobj(
+        [
+            [1, 0, 0, 0],
+            [0, 0, 1j, 0],
+            [0, 1j, 0, 0],
+            [0, 0, 0, 1],
+        ],
+        type='oper', dims=[[2, 2], [2, 2]], isherm=False, isunitary=True,
+    ),
+    r"""
+    iSWAP gate, swapping the states of two qubits with a phase of :math:`i` to
+    the :math:`\ket{01}\bra{10}` and :math:`\ket{10}\bra{01}` terms.
+    """,
+)
+sqrtswap_gate = _constant_operator_function(
+    'sqrtswap_gate',
+    Qobj(
+        [
+            [1, 0, 0, 0],
+            [0, 0.5+0.5j, 0.5-0.5j, 0],
+            [0, 0.5-0.5j, 0.5+0.5j, 0],
+            [0, 0, 0, 1],
+        ],
+        type='oper', dims=[[2, 2], [2, 2]], isherm=False, isunitary=True,
+    ),
+    """
+    Square root of the swap gate, such that two applications of this gate is
+    the same as :obj:`.swap_gate`.
+    """,
+)
+sqrtiswap_gate = _constant_operator_function(
+    'sqrtiswap_gate',
+    Qobj(
+        np.sqrt(0.5) * np.array([
+            [np.sqrt(2), 0, 0, 0],
+            [0, 1, 1j, 0],
+            [0, 1j, 1, 0],
+            [0, 0, 0, np.sqrt(2)],
+        ]),
+        type='oper', dims=[[2, 2], [2, 2]], isherm=False, isunitary=True,
+    ),
+    """
+    Square root of the iSWAP gate, such that two applications of this gate is
+    the same as :obj:`.iswap_gate`.
+    """,
+)
+fredkin_gate = _constant_operator_function(
+    'fredkin_gate',
+    controlled(swap_gate()),
+    r"""
+    3-qubit Fredkin gate.  This is the same as a controlled-swap gate  In
+    matrix form it is
+
+    .. math::
+
+        \text{Fredkin} = \begin{pmatrix}
+            1 & 0 & 0 & 0 & 0 & 0 & 0 & 0\\
+            0 & 1 & 0 & 0 & 0 & 0 & 0 & 0\\
+            0 & 0 & 1 & 0 & 0 & 0 & 0 & 0\\
+            0 & 0 & 0 & 1 & 0 & 0 & 0 & 0\\
+            0 & 0 & 0 & 0 & 1 & 0 & 0 & 0\\
+            0 & 0 & 0 & 0 & 0 & 0 & 1 & 0\\
+            0 & 0 & 0 & 0 & 0 & 1 & 0 & 0\\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 1
+        \end{pmatrix}
+    """,
+)
+toffoli_gate = _constant_operator_function(
+    'toffoli_gate',
+    controlled(cnot_gate()),
+    r"""
+    3-qubit Toffoli gate.  This is the same as a controlled-controlled-X gate
+    (or controlled-CNOT),  In matrix form it is
+
+    .. math::
+
+        \text{Toffoli} = \begin{pmatrix}
+            1 & 0 & 0 & 0 & 0 & 0 & 0 & 0\\
+            0 & 1 & 0 & 0 & 0 & 0 & 0 & 0\\
+            0 & 0 & 1 & 0 & 0 & 0 & 0 & 0\\
+            0 & 0 & 0 & 1 & 0 & 0 & 0 & 0\\
+            0 & 0 & 0 & 0 & 1 & 0 & 0 & 0\\
+            0 & 0 & 0 & 0 & 0 & 1 & 0 & 0\\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 1\\
+            0 & 0 & 0 & 0 & 0 & 0 & l & 0
+        \end{pmatrix}
+    """,
+)
