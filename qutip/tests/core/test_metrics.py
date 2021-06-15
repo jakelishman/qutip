@@ -53,10 +53,9 @@ from qutip.random_objects import (
 )
 from qutip import (
     Qobj, to_super, to_choi, tensor, create, destroy, jmat, identity, qdiags,
-    sigmax, sigmay, sigmaz, qeye, fock_dm, basis,
+    sigmax, sigmay, sigmaz, qeye, fock_dm, basis, hadamard_gate, swap_gate,
 )
 from qutip.core.metrics import *
-from qutip.qip.operations.gates import hadamard_transform, swap
 
 from qutip.settings import settings
 
@@ -417,9 +416,9 @@ def test_dnorm_qubit_known_cases():
         diag(ones((4,))),
         dims=[[[2], [2]], [[2], [2]]], superrep='chi'
     ))
-    S_H = to_super(hadamard_transform())
+    S_H = to_super(hadamard_gate())
 
-    W = swap()
+    W = swap_gate()
 
     # We need to restrict the number of iterations for things on the boundary,
     # such as perfectly distinguishable channels.

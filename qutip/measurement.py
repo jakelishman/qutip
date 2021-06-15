@@ -36,8 +36,7 @@ Module for measuring quantum objects.
 
 import numpy as np
 
-from . import Qobj, expect, identity
-from .qip.operations.gates import expand_operator
+from . import Qobj, expect, identity, expand_operator
 
 
 def _verify_input(op, state):
@@ -162,7 +161,7 @@ def measurement_statistics_povm(state, ops, targets=None):
           3. kets (transformed to projectors)
     targets : list of ints, optional
               Specifies a list of target "qubit" indices on which to apply
-              the measurement using qutip.qip.gates.expand_operator to expand
+              the measurement using :obj:`.expand_operator` to expand
               ops into full dimension.
 
 
@@ -181,8 +180,7 @@ def measurement_statistics_povm(state, ops, targets=None):
         ops = [op * op.dag() for op in ops]
 
     if targets:
-        N = int(np.log2(state.shape[0]))
-        ops = [expand_operator(op, N=N, targets=targets) for op in ops]
+        ops = [expand_operator(op, targets, state.dims[0]) for op in ops]
 
     for op in ops:
         _verify_input(op, state)
@@ -212,8 +210,8 @@ def measurement_statistics_observable(state, op, targets=None):
         The measurement operator.
     targets : list of ints, optional
               Specifies a list of targets "qubit" indices on which to apply
-              the measurement using :func:qutip.qip.gates.expand_operator
-              to expand op into full dimension.
+              the measurement using :obj:`expand_operator` to expand op into
+              full dimension.
 
 
     Returns
@@ -230,8 +228,7 @@ def measurement_statistics_observable(state, op, targets=None):
     """
 
     if targets:
-        N = int(np.log2(state.shape[0]))
-        op = expand_operator(op, N=N, targets=targets)
+        op = expand_operator(op, targets, state.dims[0])
 
     _verify_input(op, state)
 
@@ -263,8 +260,8 @@ def measure_observable(state, op, targets=None):
         The measurement operator.
     targets : list of ints, optional
               Specifies a list of target "qubit" indices on which to apply
-              the measurement using :func:qutip.qip.gates.expand_operator
-              to expand op into full dimension.
+              the measurement using :obj:`.expand_operator` to expand op into
+              full dimension.
 
 
     Returns
@@ -350,8 +347,8 @@ def measure_povm(state, ops, targets=None):
           3. kets (transformed to projectors)
     targets : list of ints, optional
               Specifies a list of target "qubit" indices on which to apply
-              the measurement using :func:`qutip.qip.gates.expand_operator`
-              to expand ops into full dimension.
+              the measurement using :obj:`.expand_operator` to expand ops into
+              full dimension.
 
     Returns
     -------
@@ -395,8 +392,8 @@ def measurement_statistics(state, ops, targets=None):
             3. kets (transformed to projectors)
     targets : list of ints, optional
               Specifies a list of target "qubit" indices on which to apply
-              the measurement using :func:qutip.qip.gates.expand_operator
-              to expand ops into full dimension.
+              the measurement using :obj:`.expand_operator` to expand ops into
+              full dimension.
     """
 
     if isinstance(ops, list):
@@ -430,8 +427,8 @@ def measure(state, ops, targets=None):
             3. kets (transformed to projectors)
     targets : list of ints, optional
               Specifies a list of target "qubit" indices on which to apply
-              the measurement using :func:qutip.qip.gates.expand_operator
-              to expand ops into full dimension.
+              the measurement using :obj:`.expand_operator` to expand ops into
+              full dimension.
     """
 
     if isinstance(ops, list):

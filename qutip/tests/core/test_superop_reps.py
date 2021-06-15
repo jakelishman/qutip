@@ -46,9 +46,8 @@ from qutip import (
     Qobj, basis, identity, sigmax, sigmay, qeye, create, rand_super,
     rand_super_bcsz, rand_dm_ginibre, tensor, super_tensor, kraus_to_choi,
     to_super, to_choi, to_kraus, to_chi, to_stinespring, operator_to_vector,
-    vector_to_operator, sprepost, destroy
+    vector_to_operator, sprepost, destroy, swap_gate,
 )
-from qutip.qip.operations.gates import swap
 
 tol = 1e-8
 
@@ -199,7 +198,7 @@ class TestSuperopReps(object):
                             + to_super(tensor(qeye(2), sigmay()))),
                      True, True, True,
                      id="linear combination of bipartite unitaries"),
-        pytest.param(Qobj(swap(), type='super', superrep='choi'),
+        pytest.param(Qobj(swap_gate(), type='super', superrep='choi'),
                      True, False, True,
                      id="partial transpose map"),
         pytest.param(Qobj(qeye(4)*0.9, type='super'), True, True, False,

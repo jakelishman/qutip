@@ -35,14 +35,15 @@ import numpy as np
 from numpy.testing import assert_, run_module_suite
 import scipy.linalg as la
 
-from qutip import (spre, spost, qeye, sigmax, sigmay, sigmaz, qpt)
-from qutip.qip.operations.gates import snot, cnot
+from qutip import (
+    spre, spost, qeye, sigmax, sigmay, sigmaz, qpt, hadamard_gate, cnot_gate,
+)
 
 
-def test_qpt_snot():
-    "quantum process tomography for snot gate"
+def test_qpt_hadamard():
+    "quantum process tomography for Hadamard gate"
 
-    U_psi = snot()
+    U_psi = hadamard_gate()
     U_rho = spre(U_psi) * spost(U_psi.dag())
     N = 1
     op_basis = [[qeye(2), sigmax(), 1j * sigmay(), sigmaz()] for i in range(N)]
@@ -58,7 +59,7 @@ def test_qpt_snot():
 def test_qpt_cnot():
     "quantum process tomography for cnot gate"
 
-    U_psi = cnot()
+    U_psi = cnot_gate()
     U_rho = spre(U_psi) * spost(U_psi.dag())
     N = 2
     op_basis = [[qeye(2), sigmax(), 1j * sigmay(), sigmaz()] for i in range(N)]

@@ -36,7 +36,10 @@ __all__ = ['entropy_vn', 'entropy_linear', 'entropy_mutual', 'negativity',
 
 from numpy import e, real, sort, sqrt
 from numpy.lib.scimath import log, log2
-from . import ptrace, ket2dm, tensor, sigmay, partial_transpose
+from . import (
+    ptrace, ket2dm, tensor, sigmay, partial_transpose, swap_gate,
+    expand_operator,
+)
 
 
 def entropy_vn(rho, base=e, sparse=False):
@@ -342,11 +345,14 @@ def entangling_power(U):
 
     if U.dims != [[2, 2], [2, 2]]:
         raise Exception("U must be a two-qubit gate.")
+    swap_13 = expand_operator(swap_gate(), [1, 3], [2]*4)
+    swap_U = swap_gate() @ U
 
-    from qutip.qip.operations.gates import swap
-    a = (tensor(U, U).dag() * swap(N=4, targets=[1, 3]) *
-         tensor(U, U) * swap(N=4, targets=[1, 3]))
-    b = (tensor(swap() * U, swap() * U).dag() * swap(N=4, targets=[1, 3]) *
-         tensor(swap() * U, swap() * U) * swap(N=4, targets=[1, 3]))
-
+    a = (tensor(U, U).dag() * swap_13 * tensor(U, U) * swap_13)
+    b = (
+        tensor(swap_U, swap_U).dag()
+        * swap_13
+        * tensor(swap_U, swap_U)
+        * swap_13
+    )
     return 5.0/9 - 1.0/36 * (a.tr() + b.tr()).real
