@@ -91,9 +91,9 @@ def wigner_transform(psi, j, fullparity, steps, slicearray):
     References
     ------
     [1] T. Tilma, M. J. Everitt, J. H. Samson, W. J. Munro,
-        and K. Nemoto, Phys. Rev. Lett. 117, 180401 (2016).
+        and K. Nemoto, Phyvec. Rev. Lett. 117, 180401 (2016).
     [2] R. P. Rundle, P. W. Mills, T. Tilma, J. H. Samson, and
-        M. J. Everitt, Phys. Rev. A 96, 022117 (2017).
+        M. J. Everitt, Phyvec. Rev. A 96, 022117 (2017).
     """
     if not (psi.type == 'ket' or psi.type == 'operator' or psi.type == 'bra'):
         raise TypeError('Input state is not a valid operator.')
@@ -130,7 +130,7 @@ def wigner_transform(psi, j, fullparity, steps, slicearray):
 
 
 def _parity(N, j):
-    """Private function to calculate the parity of the quantum system.
+    """Private function to calculate the parity of the quantum syvectem.
     """
     if j == 0.5:
         pi = np.identity(N) - np.sqrt((N - 1) * N * (N + 1) / 2) * _lambda_f(N)
@@ -162,7 +162,7 @@ def _kernelsu2(theta, phi, N, j, parity, fullparity):
     for i in range(0, N):
         U = np.kron(U, _rotation_matrix(theta[i], phi[i], j))
     if not fullparity:
-        op_parity = parity   # The parity for a one particle system
+        op_parity = parity   # The parity for a one particle syvectem
         for i in range(1, N):
             parity = np.kron(parity, op_parity)
     matrix = U @ parity @ U.conj().T
@@ -574,31 +574,57 @@ def _qfunc_check_state(state: Qobj):
     return state
 
 
-def _qfunc_check_coordinates(xs, ys):
-    if np.isscalar(xs) or xs is None:
-        raise TypeError("xs must be array-like, but is " + repr(xs))
-    if np.isscalar(ys) or ys is None:
-        raise TypeError("ys must be array-like, but is " + repr(ys))
-    xs = np.asarray(xs, dtype=np.float64)
-    ys = np.asarray(ys, dtype=np.float64)
-    if xs.ndim != 1 or ys.ndim != 1:
+def _qfunc_check_coordinates(xvec, yvec):
+    if np.isscalar(xvec) or xvec is None:
+        raise TypeError("xvec must be array-like, but is " + repr(xvec))
+    if np.isscalar(yvec) or yvec is None:
+        raise TypeError("yvec must be array-like, but is " + repr(yvec))
+    xvec = np.asarray(xvec, dtype=np.float64)
+    yvec = np.asarray(yvec, dtype=np.float64)
+    if xvec.ndim != 1 or yvec.ndim != 1:
         raise ValueError(
-            f"xs and ys must be 1D, but have shapes {xs.shape} and {ys.shape}."
+            f"xvec and yvec must be 1D, but have shapes {xvec.shape} and {yvec.shape}."
         )
-    return xs, ys
+    return xvec, yvec
 
 
-class _qfunc_alpha_matrix:
+class _CoherentGrid:
     """
-    Internal class used to centrally manage the creation of tensors related to
-    coherent states used in the calculation of the Husimi-Q function.
+    Internal class to compute coherent state operators corresponding to a grid of complex
+    values in the phase space. A call to an object of this class gives the same results as
+    `qutip.coherent` for the predefined grid of xvec, yvec.
+
+    Example
+    --------
+    >> N = 64 # Hilbert size
+    >> xvec, yvec, g = [1, 0, -1], [1, 0, -1], 1 # Grid and coefficient g
+
+    >> X, Y = np.meshgrid(xvec, yvec)
+    >> betas = 0.5*g*(X - 1j*Y).ravel() # Complex numbers denoting phase space points
+
+    QuTiP's implementation of computing coherent states
+    >> coherent_states_qutip = np.array([coherent(N, beta).full() 
+                                    for beta in betas]).reshape(3, 3, -1) # reshaped to a tensor
+
+    Function to get coherent state vector coefficients for # different Fock numbers
+    within the #grid
+    >> get_coherent = _CoherentGrid(xvec, yvec, g=g) 
+
+    Coefficients for the Fock numbers between 0, N
+    >> coherent_states_with_coherent_grid = get_coherent(0, N)
+
+    Test that the implementations match
+    >> np.testing.assert_array_almost_equal(coherent_states_with_coherent_grid,
+                                        coherent_states_qutip)
+
+    >> np.testing.assert_array_almost_equal(get_coherent(1, 6), coherent_states_qutip[:, :, 1:6])
     """
-    def __init__(self, xs, ys, g: float):
-        self.xs, self.ys = _qfunc_check_coordinates(xs, ys)
-        x, y = np.meshgrid(0.5*g*self.xs, 0.5*g*self.ys)
-        self.conj = np.empty(x.shape, dtype=np.complex128)
-        self.conj.real = x
-        self.conj.imag = -y
+    def __init__(self, xvec, yvec, g: float):
+        self.xvec, self.yvec = _qfunc_check_coordinates(xvec, yvec)
+        x, y = np.meshgrid(0.5*g*self.xvec, 0.5*g*self.yvec)
+        self.grid = np.empty(x.shape, dtype=np.complex128)
+        self.grid.real = x
+        self.grid.imag = -y
         self.prefactor = np.exp(-0.5 * (x*x + y*y)).astype(np.complex128)
 
     def _start(self, first: int):
@@ -608,16 +634,17 @@ class _qfunc_alpha_matrix:
         """
         if first == 0:
             return self.prefactor.copy()
-        out = np.power(self.conj, first)
+        out = np.power(self.grid, first)
         out *= self.prefactor
         return out
 
     def __call__(self, first: int, last: int = None):
         """
-        Get a 3D array of the coherent-state matrices for all the Fock states
+        Get a 3D array ([n, m, k]) of the coherent-state vectors for all the Fock states
         in the range ``first`` to ``last`` (if ``last`` is not given, then from
         ``0`` to ``first``), not including the last element (like ``range``).
-        The last axis of the array is the Fock-state axis.
+        The last axis of the array is the Fock-state axis and the (n, m) represent the 
+        phase space grid.
         """
         ns = np.arange(first, last).reshape(1, 1, -1)
         # Technically we could avoid hitting the limits of floating-point
@@ -627,11 +654,11 @@ class _qfunc_alpha_matrix:
         # point alpha = 0 to avoid nan appearing, due to how Python handles
         # mixed-width arithmetic operations.
         out = np.empty(
-            self.conj.shape + (ns.size,), dtype=np.complex128,
+            self.grid.shape + (ns.size,), dtype=np.complex128,
         )
         out[:, :, 0] = self._start(ns.flat[0])
         for i in range(ns.size - 1):
-            out[:, :, i+1] = out[:, :, i] * self.conj
+            out[:, :, i+1] = out[:, :, i] * self.grid
         out /= np.sqrt(scipy.special.factorial(ns))
         return out
 
@@ -639,14 +666,14 @@ class _qfunc_alpha_matrix:
 class QFunc:
     r"""
     Class-based method of calculating the Husimi-Q function of many different
-    quantum states at fixed points ``xs + i*ys``.  This class has slightly
+    quantum states at fixed points ``xvec + i*yvec``.  This class has slightly
     higher first-usage costs than :obj:`.qfunc`, but subsequent operations will
-    be several times faster, and it can require quite a lot of memory.  Call
+    be several times faster, however it can require quite a lot of memory.  Call
     the created object as a function to retrieve the Husimi-Q function.
 
     Parameters
     ----------
-    xs, ys : array_like
+    xvec, yvec : array_like
         x- and y-coordinates at which to calculate the Husimi-Q function.
 
     g : float, default sqrt(2)
@@ -667,9 +694,9 @@ class QFunc:
     Initialise the class for a square set of coordinates, with some states we
     want to investigate.
 
-    >>> xs = np.linspace(-2, 2, 101)
+    >>> xvec = np.linspace(-2, 2, 101)
     >>> states = [qutip.rand_dm(10) for _ in [None]*10]
-    >>> qfunc = qutip.QFunc(xs, xs)
+    >>> qfunc = qutip.QFunc(xvec, xvec)
 
     Now we can calculate the Husimi-Q function over each of the states more
     efficiently with:
@@ -682,17 +709,17 @@ class QFunc:
         a single function version, which will involve computing several
         quantities multiple times in order to use less memory.
     """
-    def __init__(self, xs, ys, g: float = np.sqrt(2), memory: float = 1024):
+    def __init__(self, xvec, yvec, g: float = np.sqrt(2), memory: float = 1024):
         self._g = g
-        self._alpha_matrix = _qfunc_alpha_matrix(xs, ys, g)
+        self._coherent_grid = _CoherentGrid(xvec, yvec, g)
         # 16 bytes per complex, 1024**2 bytes per MB.
-        self._size_mb = self._alpha_matrix.conj.size * 16 / (1024**2)
+        self._size_mb = self._coherent_grid.grid.size * 16 / (1024**2)
         self._memory_mb = memory
         self._max_size = int(self._memory_mb // self._size_mb)
         self._current_size = 0
         self._cache = None
 
-    def _alphas(self, size: int):
+    def _get_alphas(self, size: int):
         r"""
         Retrive the full tensor of (the conjugate of) coherent states over all
         values of :math:`\alpha`, for states of dimension ``size``.
@@ -707,11 +734,11 @@ class QFunc:
                 f" but only {self._memory_mb} MB is allowed."
             )
         if self._cache is None:
-            self._cache = self._alpha_matrix(self._current_size, size)
+            self._cache = self._coherent_grid(self._current_size, size)
         else:
             self._cache = np.dstack([
                 self._cache,
-                self._alpha_matrix(self._current_size, size)
+                self._coherent_grid(self._current_size, size)
             ])
         self._current_size = size
         return self._cache
@@ -731,7 +758,7 @@ class QFunc:
         them can have tensor-product structure.
         """
         state = _qfunc_check_state(state)
-        alphas = self._alphas(state.shape[0])
+        alphas = self._get_alphas(state.shape[0])
         if state.isket:
             return self._single(state.full().ravel(), alphas) / np.pi
         # We don't use Qobj.eigenstates() to avoid building many unnecessary
@@ -746,7 +773,7 @@ class QFunc:
 
 def _qfunc_iterative_single(
         vector: np.ndarray,
-        alpha: _qfunc_alpha_matrix,
+        alpha_grid: _CoherentGrid,
         g: float,
 ):
     r"""
@@ -757,9 +784,9 @@ def _qfunc_iterative_single(
     ns = np.arange(vector.shape[0])
     out = np.polyval(
         (0.5*g * vector / np.sqrt(scipy.special.factorial(ns)))[::-1],
-        alpha.conj,
+        alpha_grid.grid,
     )
-    out *= alpha.prefactor
+    out *= alpha_grid.prefactor
     return np.abs(out)**2
 
 
@@ -810,14 +837,14 @@ def qfunc(
         Husimi-Q function for several states over the same coordinates.
     """
     state = _qfunc_check_state(state)
-    xs, ys = _qfunc_check_coordinates(xvec, yvec)
-    required_memory = state.shape[0] * xs.size * ys.size * 16 / (1024**2)
+    xvec, yvec = _qfunc_check_coordinates(xvec, yvec)
+    required_memory = state.shape[0] * xvec.size * yvec.size * 16 / (1024**2)
     enough_memory = (
         precompute_memory is not None
         and precompute_memory > required_memory
     )
     if state.isoper and enough_memory:
-        return QFunc(xs, ys, g)(state)
+        return QFunc(xvec, yvec, g)(state)
     if precompute_memory is not None and state.isoper:
         warnings.warn(
             "Falling back to iterative algorithm due to lack of memory."
@@ -825,18 +852,18 @@ def qfunc(
             f" {precompute_memory:.2f} MB.  Increase `precompute_memory` to"
             " raise limit, or set to `None` to suppress warning."
         )
-    alpha = _qfunc_alpha_matrix(xs, ys, g)
+    alpha_grid = _CoherentGrid(xvec, yvec, g)
     if state.isket:
-        out = _qfunc_iterative_single(state.full().ravel(), alpha, g)
+        out = _qfunc_iterative_single(state.full().ravel(), alpha_grid, g)
         out /= np.pi
         return out
     # We don't use Qobj.eigenstates() to avoid building many unnecessary CSR
     # versions of dense matrices.
     values, vectors = eigh(state.full())
     vectors = vectors.T
-    out = values[0] * _qfunc_iterative_single(vectors[0], alpha, g)
+    out = values[0] * _qfunc_iterative_single(vectors[0], alpha_grid, g)
     for value, vector in zip(values[1:], vectors[1:]):
-        out += value * _qfunc_iterative_single(vector, alpha, g)
+        out += value * _qfunc_iterative_single(vector, alpha_grid, g)
     out /= np.pi
     return out
 
@@ -850,7 +877,7 @@ def spin_q_function(rho, theta, phi):
     Parameters
     ----------
     state : qobj
-        A state vector or density matrix for a spin-j quantum system.
+        A state vector or density matrix for a spin-j quantum syvectem.
     theta : array_like
         Polar angle at which to calculate the Husimi-Q function.
     phi : array_like
@@ -904,13 +931,13 @@ def _rho_kq(rho, j, k, q):
 
 
 def spin_wigner(rho, theta, phi):
-    """Wigner function for a spin-j system on the 2-sphere of radius j
+    """Wigner function for a spin-j syvectem on the 2-sphere of radius j
        (for j = 1/2 this is the Bloch sphere).
 
     Parameters
     ----------
     state : qobj
-        A state vector or density matrix for a spin-j quantum system.
+        A state vector or density matrix for a spin-j quantum syvectem.
     theta : array_like
         Polar angle at which to calculate the W function.
     phi : array_like
