@@ -31,13 +31,30 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
-__all__ = ['wigner', 'qfunc', 'QFunc', 'spin_q_function',
-           'spin_wigner', 'wigner_transform']
+__all__ = [
+    "wigner",
+    "qfunc",
+    "QFunc",
+    "spin_q_function",
+    "spin_wigner",
+    "wigner_transform",
+]
 
 import numpy as np
 import warnings
 from numpy import (
-    zeros, array, arange, exp, real, conj, pi, copy, sqrt, meshgrid, cos, sin,
+    zeros,
+    array,
+    arange,
+    exp,
+    real,
+    conj,
+    pi,
+    copy,
+    sqrt,
+    meshgrid,
+    cos,
+    sin,
 )
 import scipy.sparse as sp
 import scipy.fftpack as ft
@@ -95,15 +112,15 @@ def wigner_transform(psi, j, fullparity, steps, slicearray):
     [2] R. P. Rundle, P. W. Mills, T. Tilma, J. H. Samson, and
         M. J. Everitt, Phyvec. Rev. A 96, 022117 (2017).
     """
-    if not (psi.type == 'ket' or psi.type == 'operator' or psi.type == 'bra'):
-        raise TypeError('Input state is not a valid operator.')
+    if not (psi.type == "ket" or psi.type == "operator" or psi.type == "bra"):
+        raise TypeError("Input state is not a valid operator.")
 
-    if psi.type == 'ket' or psi.type == 'bra':
+    if psi.type == "ket" or psi.type == "bra":
         rho = ket2dm(psi)
     else:
         rho = psi
 
-    sun = 2   # The order of the SU group
+    sun = 2  # The order of the SU group
 
     # calculate total number of particles in quantum state:
     N = np.int32(np.log(np.shape(rho)[0]) / np.log(2 * j + 1))
@@ -119,13 +136,19 @@ def wigner_transform(psi, j, fullparity, steps, slicearray):
 
     wigner = np.zeros((steps, steps))
     if fullparity:
-        pari = _parity(sun**N, j)
+        pari = _parity(sun ** N, j)
     else:
         pari = _parity(sun, j)
     for t in range(steps):
         for p in range(steps):
-            wigner[t, p] = np.real(np.trace(rho.data @ _kernelsu2(
-                theta[:, t], phi[:, p], N, j, pari, fullparity)))
+            wigner[t, p] = np.real(
+                np.trace(
+                    rho.data
+                    @ _kernelsu2(
+                        theta[:, t], phi[:, p], N, j, pari, fullparity
+                    )
+                )
+            )
     return wigner
 
 
@@ -150,7 +173,7 @@ def _lambda_f(N):
     """Private function needed for the calculation of the parity.
     """
     matrix = np.sqrt(2 / (N * (N - 1))) * np.identity(N)
-    matrix[-1, -1] = - np.sqrt(2 * (N - 1) / N)
+    matrix[-1, -1] = -np.sqrt(2 * (N - 1) / N)
     return matrix
 
 
@@ -162,7 +185,7 @@ def _kernelsu2(theta, phi, N, j, parity, fullparity):
     for i in range(0, N):
         U = np.kron(U, _rotation_matrix(theta[i], phi[i], j))
     if not fullparity:
-        op_parity = parity   # The parity for a one particle syvectem
+        op_parity = parity  # The parity for a one particle syvectem
         for i in range(1, N):
             parity = np.kron(parity, op_parity)
     matrix = U @ parity @ U.conj().T
@@ -172,26 +195,28 @@ def _kernelsu2(theta, phi, N, j, parity, fullparity):
 def _rotation_matrix(theta, phi, j):
     """Private function to calculate the rotation operator for the SU2 kernel.
     """
-    return la.expm(1j * phi * jmat(j, 'z').full()) @ \
-           la.expm(1j * theta * jmat(j, 'y').full())
+    return la.expm(1j * phi * jmat(j, "z").full()) @ la.expm(
+        1j * theta * jmat(j, "y").full()
+    )
 
 
 def _angle_slice(slicearray, theta, phi):
     """Private function to modify theta and phi for angle slicing.
     """
-    xind = np.where(slicearray == 'x')
+    xind = np.where(slicearray == "x")
     theta[xind, :] = np.pi - theta[xind, :]
     phi[xind, :] = -phi[xind, :]
-    yind = np.where(slicearray == 'y')
+    yind = np.where(slicearray == "y")
     theta[yind, :] = np.pi - theta[yind, :]
     phi[yind, :] = np.pi - phi[yind, :]
-    zind = np.where(slicearray == 'z')
+    zind = np.where(slicearray == "z")
     phi[zind, :] = phi[zind, :] + np.pi
     return theta, phi
 
 
-def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
-           sparse=False, parfor=False):
+def wigner(
+    psi, xvec, yvec, method="clenshaw", g=sqrt(2), sparse=False, parfor=False
+):
     """Wigner function for a state vector or density matrix at points
     `xvec + i * yvec`.
 
@@ -215,16 +240,17 @@ def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
         value `hbar=1`.
 
     method : string {'clenshaw', 'iterative', 'laguerre', 'fft'}
-        Select method 'clenshaw' 'iterative', 'laguerre', or 'fft', where 'clenshaw'
-        and 'iterative' use an iterative method to evaluate the Wigner functions for density
-        matrices :math:`|m><n|`, while 'laguerre' uses the Laguerre polynomials
-        in scipy for the same task. The 'fft' method evaluates the Fourier
-        transform of the density matrix. The 'iterative' method is default, and
-        in general recommended, but the 'laguerre' method is more efficient for
-        very sparse density matrices (e.g., superpositions of Fock states in a
-        large Hilbert space). The 'clenshaw' method is the preferred method for
-        dealing with density matrices that have a large number of excitations
-        (>~50). 'clenshaw' is a fast and numerically stable method.
+        Select method 'clenshaw' 'iterative', 'laguerre', or 'fft', where
+        'clenshaw' and 'iterative' use an iterative method to evaluate the
+        Wigner functions for density matrices :math:`|m><n|`, while 'laguerre'
+        uses the Laguerre polynomials in scipy for the same task. 
+        The 'fft' method evaluates the Fourier transform of the density matrix.
+        The 'iterative' method is default, and in general recommended, but the
+        'laguerre' method is more efficient for very sparse density matrices
+        (e.g., superpositions of Fock states in a large Hilbert space).
+        The 'clenshaw' method is the preferred method for dealing with density
+        matrices that have a large number of excitations (>~50). 'clenshaw' is
+        a fast and numerically stable method.
 
     sparse : bool {False, True}
         Tells the default solver whether or not to keep the input density
@@ -260,29 +286,30 @@ def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
 
     """
 
-    if not (psi.type == 'ket' or psi.type == 'oper' or psi.type == 'bra'):
-        raise TypeError('Input state is not a valid operator.')
+    if not (psi.type == "ket" or psi.type == "oper" or psi.type == "bra"):
+        raise TypeError("Input state is not a valid operator.")
 
-    if method == 'fft':
+    if method == "fft":
         return _wigner_fourier(psi, xvec, g)
 
-    if psi.type == 'ket' or psi.type == 'bra':
+    if psi.type == "ket" or psi.type == "bra":
         rho = ket2dm(psi)
     else:
         rho = psi
 
-    if method == 'iterative':
+    if method == "iterative":
         return _wigner_iterative(rho, xvec, yvec, g)
 
-    elif method == 'laguerre':
+    elif method == "laguerre":
         return _wigner_laguerre(rho, xvec, yvec, g, parfor)
 
-    elif method == 'clenshaw':
+    elif method == "clenshaw":
         return _wigner_clenshaw(rho, xvec, yvec, g, sparse=sparse)
 
     else:
         raise TypeError(
-            "method must be either 'iterative', 'laguerre', or 'fft'.")
+            "method must be either 'iterative', 'laguerre', or 'fft'."
+        )
 
 
 def _wigner_iterative(rho, xvec, yvec, g=sqrt(2)):
@@ -350,7 +377,8 @@ def _wigner_laguerre(rho, xvec, yvec, g, parallel):
         # for compress sparse row matrices
         if parallel:
             iterator = (
-                (m, rho, A, B) for m in range(len(rho.data.indptr) - 1))
+                (m, rho, A, B) for m in range(len(rho.data.indptr) - 1)
+            )
             W1_out = parfor(_par_wig_eval, iterator)
             W += sum(W1_out)
         else:
@@ -362,10 +390,13 @@ def _wigner_laguerre(rho, xvec, yvec, g, parallel):
                         W += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
 
                     elif n > m:
-                        W += 2.0 * real(rho[m, n] * (-1) ** m *
-                                        (2 * A) ** (n - m) *
-                                        sqrt(factorial(m) / factorial(n)) *
-                                        genlaguerre(m, n - m)(B))
+                        W += 2.0 * real(
+                            rho[m, n]
+                            * (-1) ** m
+                            * (2 * A) ** (n - m)
+                            * sqrt(factorial(m) / factorial(n))
+                            * genlaguerre(m, n - m)(B)
+                        )
     else:
         # for dense density matrices
         B = 4 * abs(A) ** 2
@@ -374,10 +405,13 @@ def _wigner_laguerre(rho, xvec, yvec, g, parallel):
                 W += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
             for n in range(m + 1, M):
                 if abs(rho[m, n]) > 0.0:
-                    W += 2.0 * real(rho[m, n] * (-1) ** m *
-                                    (2 * A) ** (n - m) *
-                                    sqrt(factorial(m) / factorial(n)) *
-                                    genlaguerre(m, n - m)(B))
+                    W += 2.0 * real(
+                        rho[m, n]
+                        * (-1) ** m
+                        * (2 * A) ** (n - m)
+                        * sqrt(factorial(m) / factorial(n))
+                        * genlaguerre(m, n - m)(B)
+                    )
 
     return 0.5 * W * g ** 2 * np.exp(-B / 2) / pi
 
@@ -396,10 +430,13 @@ def _par_wig_eval(args):
             W1 += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
 
         elif n > m:
-            W1 += 2.0 * real(rho[m, n] * (-1) ** m *
-                             (2 * A) ** (n - m) *
-                             sqrt(factorial(m) / factorial(n)) *
-                             genlaguerre(m, n - m)(B))
+            W1 += 2.0 * real(
+                rho[m, n]
+                * (-1) ** m
+                * (2 * A) ** (n - m)
+                * sqrt(factorial(m) / factorial(n))
+                * genlaguerre(m, n - m)(B)
+            )
     return W1
 
 
@@ -407,16 +444,17 @@ def _wigner_fourier(psi, xvec, g=np.sqrt(2)):
     """
     Evaluate the Wigner function via the Fourier transform.
     """
-    if psi.type == 'bra':
+    if psi.type == "bra":
         psi = psi.dag()
-    if psi.type == 'ket':
+    if psi.type == "ket":
         return _psi_wigner_fft(psi.full(), xvec, g)
-    elif psi.type == 'oper':
+    elif psi.type == "oper":
         eig_vals, eig_vecs = eigh(psi.full())
         W = 0
         for ii in range(psi.shape[0]):
             W1, yvec = _psi_wigner_fft(
-                np.reshape(eig_vecs[:, ii], (psi.shape[0], 1)), xvec, g)
+                np.reshape(eig_vecs[:, ii], (psi.shape[0], 1)), xvec, g
+            )
             W += eig_vals[ii] * W1
         return W, yvec
 
@@ -438,18 +476,23 @@ def _wigner_fft(psi, xvec):
     Evaluates the Fourier transformation of a given state vector.
     Returns the corresponding density matrix and range
     """
-    n = 2*len(psi.T)
-    r1 = np.concatenate((np.array([[0]]),
-                        np.fliplr(psi.conj()),
-                        np.zeros((1, n//2 - 1))), axis=1)
-    r2 = np.concatenate((np.array([[0]]), psi,
-                        np.zeros((1, n//2 - 1))), axis=1)
-    w = la.toeplitz(np.zeros((n//2, 1)), r1) * \
-        np.flipud(la.toeplitz(np.zeros((n//2, 1)), r2))
-    w = np.concatenate((w[:, n//2:n], w[:, 0:n//2]), axis=1)
+    n = 2 * len(psi.T)
+    r1 = np.concatenate(
+        (np.array([[0]]), np.fliplr(psi.conj()), np.zeros((1, n // 2 - 1))),
+        axis=1,
+    )
+    r2 = np.concatenate(
+        (np.array([[0]]), psi, np.zeros((1, n // 2 - 1))), axis=1
+    )
+    w = la.toeplitz(np.zeros((n // 2, 1)), r1) * np.flipud(
+        la.toeplitz(np.zeros((n // 2, 1)), r2)
+    )
+    w = np.concatenate((w[:, n // 2 : n], w[:, 0 : n // 2]), axis=1)
     w = ft.fft(w)
-    w = np.real(np.concatenate((w[:, 3*n//4:n+1], w[:, 0:n//4]), axis=1))
-    p = np.arange(-n/4, n/4)*np.pi / (n*(xvec[1] - xvec[0]))
+    w = np.real(
+        np.concatenate((w[:, 3 * n // 4 : n + 1], w[:, 0 : n // 4]), axis=1)
+    )
+    p = np.arange(-n / 4, n / 4) * np.pi / (n * (xvec[1] - xvec[0]))
     w = w / (p[1] - p[0]) / n
     return w, p
 
@@ -462,14 +505,16 @@ def _osc_eigen(N, pnts):
     pnts = np.asarray(pnts)
     lpnts = len(pnts)
     A = np.zeros((N, lpnts))
-    A[0, :] = np.exp(-pnts ** 2 / 2.0) / pi ** 0.25
+    A[0, :] = np.exp(-(pnts ** 2) / 2.0) / pi ** 0.25
     if N == 1:
         return A
     else:
         A[1, :] = np.sqrt(2) * pnts * A[0, :]
         for k in range(2, N):
-            A[k, :] = np.sqrt(2.0 / k) * pnts * A[k - 1, :] - \
-                np.sqrt((k - 1.0) / k) * A[k - 2, :]
+            A[k, :] = (
+                np.sqrt(2.0 / k) * pnts * A[k - 1, :]
+                - np.sqrt((k - 1.0) / k) * A[k - 2, :]
+            )
         return A
 
 
@@ -485,33 +530,37 @@ def _wigner_clenshaw(rho, xvec, yvec, g=sqrt(2), sparse=False):
     """
 
     M = np.prod(rho.shape[0])
-    X,Y = np.meshgrid(xvec, yvec)
-    #A = 0.5 * g * (X + 1.0j * Y)
-    A2 = g * (X + 1.0j * Y) #this is A2 = 2*A
+    X, Y = np.meshgrid(xvec, yvec)
+    # A = 0.5 * g * (X + 1.0j * Y)
+    A2 = g * (X + 1.0j * Y)  # this is A2 = 2*A
 
     B = np.abs(A2)
     B *= B
-    w0 = (2*rho.data[0,-1])*np.ones_like(A2)
-    L = M-1
-    #calculation of \sum_{L} c_L (2x)^L / \sqrt(L!)
-    #using Horner's method
+    w0 = (2 * rho.data[0, -1]) * np.ones_like(A2)
+    L = M - 1
+    # calculation of \sum_{L} c_L (2x)^L / \sqrt(L!)
+    # using Horner's method
     if not sparse:
-        rho = rho.full() * (2*np.ones((M,M)) - np.diag(np.ones(M)))
+        rho = rho.full() * (2 * np.ones((M, M)) - np.diag(np.ones(M)))
         while L > 0:
             L -= 1
-            #here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))
-            w0 = _wig_laguerre_val(L, B, np.diag(rho, L)) + w0 * A2 * (L+1)**-0.5
+            # here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))
+            w0 = (
+                _wig_laguerre_val(L, B, np.diag(rho, L))
+                + w0 * A2 * (L + 1) ** -0.5
+            )
     else:
         while L > 0:
             L -= 1
-            diag = _csr_get_diag(rho.data.data,rho.data.indices,
-                                rho.data.indptr,L)
+            diag = _csr_get_diag(
+                rho.data.data, rho.data.indices, rho.data.indptr, L
+            )
             if L != 0:
                 diag *= 2
-            #here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))
-            w0 = _wig_laguerre_val(L, B, diag) + w0 * A2 * (L+1)**-0.5
+            # here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))
+            w0 = _wig_laguerre_val(L, B, diag) + w0 * A2 * (L + 1) ** -0.5
 
-    return w0.real * np.exp(-B*0.5) * (g*g*0.5 / pi)
+    return w0.real * np.exp(-B * 0.5) * (g * g * 0.5 / pi)
 
 
 def _wig_laguerre_val(L, x, c):
@@ -542,10 +591,13 @@ def _wig_laguerre_val(L, x, c):
         y1 = c[-1]
         for i in range(3, len(c) + 1):
             k -= 1
-            y0,    y1 = c[-i] - y1 * (float((k - 1)*(L + k - 1))/((L+k)*k))**0.5, \
-            y0 - y1 * ((L + 2*k -1) - x) * ((L+k)*k)**-0.5
+            y0, y1 = (
+                c[-i]
+                - y1 * (float((k - 1) * (L + k - 1)) / ((L + k) * k)) ** 0.5,
+                y0 - y1 * ((L + 2 * k - 1) - x) * ((L + k) * k) ** -0.5,
+            )
 
-    return y0 - y1 * ((L + 1) - x) * (L + 1)**-0.5
+    return y0 - y1 * ((L + 1) - x) * (L + 1) ** -0.5
 
 
 # -----------------------------------------------------------------------------
@@ -590,9 +642,10 @@ def _qfunc_check_coordinates(xvec, yvec):
 
 class _CoherentGrid:
     """
-    Internal class to compute coherent state operators corresponding to a grid of complex
-    values in the phase space. A call to an object of this class gives the same results as
-    `qutip.coherent` for the predefined grid of xvec, yvec.
+    Internal class to compute coherent state operators corresponding to a grid
+    of complex values in the phase space. A call to an object of this class
+    gives the same results as `qutip.coherent` for the predefined grid of
+    (xvec, yvec).
 
     Example
     --------
@@ -600,13 +653,13 @@ class _CoherentGrid:
     >> xvec, yvec, g = [1, 0, -1], [1, 0, -1], 1 # Grid and coefficient g
 
     >> X, Y = np.meshgrid(xvec, yvec)
-    >> betas = 0.5*g*(X - 1j*Y).ravel() # Complex numbers denoting phase space points
+    >> betas = 0.5*g*(X - 1j*Y).ravel() # Complex numbers denoting phase space 
 
     QuTiP's implementation of computing coherent states
     >> coherent_states_qutip = np.array([coherent(N, beta).full() 
-                                    for beta in betas]).reshape(3, 3, -1) # reshaped to a tensor
+                                    for beta in betas]).reshape(3, 3, -1)
 
-    Function to get coherent state vector coefficients for # different Fock numbers
+    Function to get coherent state vector coefficients for Fock numbers
     within the #grid
     >> get_coherent = _CoherentGrid(xvec, yvec, g=g) 
 
@@ -617,15 +670,16 @@ class _CoherentGrid:
     >> np.testing.assert_array_almost_equal(coherent_states_with_coherent_grid,
                                         coherent_states_qutip)
 
-    >> np.testing.assert_array_almost_equal(get_coherent(1, 6), coherent_states_qutip[:, :, 1:6])
+    >> np.testing.assert_array_almost_equal(get_coherent(1, 6),
+                                            coherent_states_qutip[:, :, 1:6])
     """
     def __init__(self, xvec, yvec, g: float):
         self.xvec, self.yvec = _qfunc_check_coordinates(xvec, yvec)
-        x, y = np.meshgrid(0.5*g*self.xvec, 0.5*g*self.yvec)
+        x, y = np.meshgrid(0.5 * g * self.xvec, 0.5 * g * self.yvec)
         self.grid = np.empty(x.shape, dtype=np.complex128)
         self.grid.real = x
         self.grid.imag = -y
-        self.prefactor = np.exp(-0.5 * (x*x + y*y)).astype(np.complex128)
+        self.prefactor = np.exp(-0.5 * (x * x + y * y)).astype(np.complex128)
 
     def _start(self, first: int):
         """
@@ -640,11 +694,11 @@ class _CoherentGrid:
 
     def __call__(self, first: int, last: int = None):
         """
-        Get a 3D array ([n, m, k]) of the coherent-state vectors for all the Fock states
-        in the range ``first`` to ``last`` (if ``last`` is not given, then from
-        ``0`` to ``first``), not including the last element (like ``range``).
-        The last axis of the array is the Fock-state axis and the (n, m) represent the 
-        phase space grid.
+        Get a 3D array ([n, m, k]) of the coherent-state vectors for all the
+        Fock states in the range ``first`` to ``last`` (if ``last`` is not
+        given, then from ``0`` to ``first``), not including the last element
+        (like ``range``). The last axis of the array is the Fock-state axis and
+        the (n, m) represent the phase space grid.
         """
         ns = np.arange(first, last).reshape(1, 1, -1)
         # Technically we could avoid hitting the limits of floating-point
@@ -653,12 +707,10 @@ class _CoherentGrid:
         # floating-point operations overall, and needs special care around the
         # point alpha = 0 to avoid nan appearing, due to how Python handles
         # mixed-width arithmetic operations.
-        out = np.empty(
-            self.grid.shape + (ns.size,), dtype=np.complex128,
-        )
+        out = np.empty(self.grid.shape + (ns.size,), dtype=np.complex128,)
         out[:, :, 0] = self._start(ns.flat[0])
         for i in range(ns.size - 1):
-            out[:, :, i+1] = out[:, :, i] * self.grid
+            out[:, :, i + 1] = out[:, :, i] * self.grid
         out /= np.sqrt(scipy.special.factorial(ns))
         return out
 
@@ -668,7 +720,7 @@ class QFunc:
     Class-based method of calculating the Husimi-Q function of many different
     quantum states at fixed points ``xvec + i*yvec``.  This class has slightly
     higher first-usage costs than :obj:`.qfunc`, but subsequent operations will
-    be several times faster, however it can require quite a lot of memory.  Call
+    be several times faster, however it can require quite a lot of memory. Call
     the created object as a function to retrieve the Husimi-Q function.
 
     Parameters
@@ -709,11 +761,14 @@ class QFunc:
         a single function version, which will involve computing several
         quantities multiple times in order to use less memory.
     """
-    def __init__(self, xvec, yvec, g: float = np.sqrt(2), memory: float = 1024):
+
+    def __init__(
+        self, xvec, yvec, g: float = np.sqrt(2), memory: float = 1024
+    ):
         self._g = g
         self._coherent_grid = _CoherentGrid(xvec, yvec, g)
         # 16 bytes per complex, 1024**2 bytes per MB.
-        self._size_mb = self._coherent_grid.grid.size * 16 / (1024**2)
+        self._size_mb = self._coherent_grid.grid.size * 16 / (1024 ** 2)
         self._memory_mb = memory
         self._max_size = int(self._memory_mb // self._size_mb)
         self._current_size = 0
@@ -736,10 +791,9 @@ class QFunc:
         if self._cache is None:
             self._cache = self._coherent_grid(self._current_size, size)
         else:
-            self._cache = np.dstack([
-                self._cache,
-                self._coherent_grid(self._current_size, size)
-            ])
+            self._cache = np.dstack(
+                [self._cache, self._coherent_grid(self._current_size, size)]
+            )
         self._current_size = size
         return self._cache
 
@@ -748,7 +802,7 @@ class QFunc:
         Get the Q function (without the :math:`\pi` scaling factor) of a single
         state vector.
         """
-        return np.abs(np.dot(alphas, (self._g*0.5)*vector))**2
+        return np.abs(np.dot(alphas, (self._g * 0.5) * vector)) ** 2
 
     def __call__(self, state: Qobj):
         """
@@ -772,9 +826,7 @@ class QFunc:
 
 
 def _qfunc_iterative_single(
-        vector: np.ndarray,
-        alpha_grid: _CoherentGrid,
-        g: float,
+    vector: np.ndarray, alpha_grid: _CoherentGrid, g: float,
 ):
     r"""
     Get the Q function (without the :math:`\pi` scaling factor) of a single
@@ -783,19 +835,19 @@ def _qfunc_iterative_single(
     """
     ns = np.arange(vector.shape[0])
     out = np.polyval(
-        (0.5*g * vector / np.sqrt(scipy.special.factorial(ns)))[::-1],
+        (0.5 * g * vector / np.sqrt(scipy.special.factorial(ns)))[::-1],
         alpha_grid.grid,
     )
     out *= alpha_grid.prefactor
-    return np.abs(out)**2
+    return np.abs(out) ** 2
 
 
 def qfunc(
-        state: Qobj,
-        xvec,
-        yvec,
-        g: float = sqrt(2),
-        precompute_memory: float = 1024,
+    state: Qobj,
+    xvec,
+    yvec,
+    g: float = sqrt(2),
+    precompute_memory: float = 1024,
 ):
     r"""
     Husimi-Q function of a given state vector or density matrix at points
@@ -838,10 +890,9 @@ def qfunc(
     """
     state = _qfunc_check_state(state)
     xvec, yvec = _qfunc_check_coordinates(xvec, yvec)
-    required_memory = state.shape[0] * xvec.size * yvec.size * 16 / (1024**2)
+    required_memory = state.shape[0] * xvec.size * yvec.size * 16 / (1024 ** 2)
     enough_memory = (
-        precompute_memory is not None
-        and precompute_memory > required_memory
+        precompute_memory is not None and precompute_memory > required_memory
     )
     if state.isoper and enough_memory:
         return QFunc(xvec, yvec, g)(state)
@@ -891,10 +942,10 @@ def spin_q_function(rho, theta, phi):
 
     """
 
-    if rho.type == 'bra':
+    if rho.type == "bra":
         rho = rho.dag()
 
-    if rho.type == 'ket':
+    if rho.type == "ket":
         rho = ket2dm(rho)
 
     J = rho.shape[0]
@@ -904,26 +955,37 @@ def spin_q_function(rho, theta, phi):
 
     Q = np.zeros_like(THETA, dtype=complex)
 
-    for m1 in arange(-j, j+1):
+    for m1 in arange(-j, j + 1):
 
-        Q += binom(2*j, j+m1) * cos(THETA/2) ** (2*(j-m1)) * sin(THETA/2) ** (2*(j+m1)) * \
-             rho.data[int(j-m1), int(j-m1)]
+        Q += (
+            binom(2 * j, j + m1)
+            * cos(THETA / 2) ** (2 * (j - m1))
+            * sin(THETA / 2) ** (2 * (j + m1))
+            * rho.data[int(j - m1), int(j - m1)]
+        )
 
-        for m2 in arange(m1+1, j+1):
+        for m2 in arange(m1 + 1, j + 1):
 
-            Q += (sqrt(binom(2*j, j+m1)) * sqrt(binom(2*j, j+m2)) *
-                  cos(THETA/2) ** (2*j-m1-m2) * sin(THETA/2) ** (2*j+m1+m2)) * \
-                  (exp(1j * (m2-m1) * PHI) * rho.data[int(j-m1), int(j-m2)] +
-                   exp(1j * (m1-m2) * PHI) * rho.data[int(j-m2), int(j-m1)])
+            Q += (
+                sqrt(binom(2 * j, j + m1))
+                * sqrt(binom(2 * j, j + m2))
+                * cos(THETA / 2) ** (2 * j - m1 - m2)
+                * sin(THETA / 2) ** (2 * j + m1 + m2)
+            ) * (
+                exp(1j * (m2 - m1) * PHI) * rho.data[int(j - m1), int(j - m2)]
+                + exp(1j * (m1 - m2) * PHI)
+                * rho.data[int(j - m2), int(j - m1)]
+            )
 
-    return Q.real/pi, THETA, PHI
+    return Q.real / pi, THETA, PHI
+
 
 def _rho_kq(rho, j, k, q):
     v = 0j
-    for m1 in arange(-j, j+1):
-        for m2 in arange(-j, j+1):
+    for m1 in arange(-j, j + 1):
+        for m2 in arange(-j, j + 1):
             v += (
-                (-1)**(j - m1 - q)
+                (-1) ** (j - m1 - q)
                 * qutip.clebsch(j, j, k, m1, -m2, q)
                 * rho.data[m1 + j, m2 + j]
             )
@@ -955,10 +1017,10 @@ def spin_wigner(rho, theta, phi):
 
     """
 
-    if rho.type == 'bra':
+    if rho.type == "bra":
         rho = rho.dag()
 
-    if rho.type == 'ket':
+    if rho.type == "ket":
         rho = ket2dm(rho)
 
     J = rho.shape[0]
@@ -968,8 +1030,8 @@ def spin_wigner(rho, theta, phi):
 
     W = np.zeros_like(THETA, dtype=complex)
 
-    for k in range(int(2 * j)+1):
-        for q in arange(-k, k+1):
+    for k in range(int(2 * j) + 1):
+        for q in arange(-k, k + 1):
             # sph_harm takes azimuthal angle then polar angle as arguments
             W += _rho_kq(rho, j, k, q) * sph_harm(q, k, PHI, THETA)
 
