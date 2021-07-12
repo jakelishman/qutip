@@ -1,6 +1,3 @@
-.. QuTiP
-   Copyright (C) 2011 and later, Paul D. Nation & Robert J. Johansson
-
 .. _frontmatter:
 
 *************
@@ -45,7 +42,10 @@ This document contains a user guide and automatically generated API documentatio
 
 :release: |release|
 
-:copyright: This documentation is licensed under the Creative Commons Attribution 3.0 Unported License.
+:copyright:
+   The text of this documentation is licensed under the Creative Commons Attribution 3.0 Unported License.
+   All contained code samples, and the source code of QuTiP, are licensed under the 3-clause BSD licence.
+   Full details of the copyright notices can be found on the `Copyright and Licensing <copyright>`_ page of this documentation.
 
 .. _citing-qutip:
 
@@ -169,6 +169,7 @@ Several libraries rely on QuTiP for quantum physics or quantum information proce
 
 :qupulse: `qupulse <https://qupulse.readthedocs.io/en/latest/>`_ is a toolkit to facilitate experiments involving pulse driven state manipulation of physical qubits
 
+:Pulser: `Pulser <https://pulser.readthedocs.io/en/latest/>`_ is a framework for composing, simulating and executing pulse sequences for neutral-atom quantum devices.
 
 
 
