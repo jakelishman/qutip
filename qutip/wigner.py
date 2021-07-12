@@ -563,15 +563,15 @@ class _QFuncCoherentGrid:
     >> xvec, yvec, g = [1, 0, -1], [1, 0, -1], 1 # Grid and coefficient g
 
     >> X, Y = np.meshgrid(xvec, yvec)
-    >> betas = 0.5*g*(X - 1j*Y).ravel() # Complex numbers denoting phase space 
+    >> betas = 0.5*g*(X - 1j*Y).ravel() # Complex numbers denoting phase space
 
     QuTiP's implementation of computing coherent states
-    >> coherent_states_qutip = np.array([coherent(N, beta).full() 
+    >> coherent_states_qutip = np.array([coherent(N, beta).full()
                                     for beta in betas]).reshape(3, 3, -1)
 
     Function to get coherent state vector coefficients for Fock numbers
     within the #grid
-    >> get_coherent = _QFuncCoherentGrid(xvec, yvec, g=g) 
+    >> get_coherent = _QFuncCoherentGrid(xvec, yvec, g=g)
 
     Coefficients for the Fock numbers between 0, N
     >> coherent_states_with_coherent_grid = get_coherent(0, N)
